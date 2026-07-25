@@ -460,6 +460,97 @@ module.exports = {
 			}
 		}
 	},
+	async updateCustomer({
+		sessionUserId,
+		userId,
+		userData
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const targetUserId = normalizeText(userId)
+			if (!targetUserId) {
+				return {
+					success: false,
+					message: '客户参数不正确'
+				}
+			}
+			const validation = validateCustomerPayload(userData || {})
+			if (!validation.valid) {
+				return {
+					success: false,
+					message: validation.message
+				}
+			}
+			const payloadData = validation.payload
+			const targetRes = await db.collection(CUSTOMER_COLLECTION).doc(targetUserId).get()
+			const targetUsers = getDbData(targetRes)
+			const targetUser = targetUsers[0]
+			if (!targetUser || targetUser.isAdmin) {
+				return {
+					success: false,
+					message: '客户不存在'
+				}
+			}
+			const currentUsers = await loadUsers(db)
+			const hasDuplicate = currentUsers.some(user => user._id !== targetUserId && (
+				normalizeUsername(user.username) === normalizeUsername(payloadData.username) ||
+				normalizeText(user.name) === normalizeText(payloadData.name)
+			))
+			if (hasDuplicate) {
+				return {
+					success: false,
+					message: '客户名称或账号已存在'
+				}
+			}
+			await db.collection(CUSTOMER_COLLECTION).doc(targetUserId).update({
+				...payloadData,
+				isAdmin: false
+			})
+			return {
+				success: true
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '更新客户失败'
+			}
+		}
+	},
+	async deleteCustomer({
+		sessionUserId,
+		userId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const targetUserId = normalizeText(userId)
+			if (!targetUserId) {
+				return {
+					success: false,
+					message: '客户参数不正确'
+				}
+			}
+			const targetRes = await db.collection(CUSTOMER_COLLECTION).doc(targetUserId).get()
+			const targetUsers = getDbData(targetRes)
+			const targetUser = targetUsers[0]
+			if (!targetUser || targetUser.isAdmin) {
+				return {
+					success: false,
+					message: '客户不存在'
+				}
+			}
+			await db.collection(CUSTOMER_COLLECTION).doc(targetUserId).remove()
+			return {
+				success: true
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '删除客户失败'
+			}
+		}
+	},
 	async addOrder({
 		sessionUserId,
 		orderData

@@ -296,6 +296,57 @@ async function addOrder(orderData) {
 	}
 }
 
+async function updateCustomer(userId, userData) {
+	try {
+		const result = unwrapServiceResult(await getService().updateCustomer({
+			sessionUserId: getSessionUserId(),
+			userId,
+			userData
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '更新客户失败')
+			}
+		}
+		await loadUsers()
+		showNotification('客户信息已更新')
+		return {
+			success: true
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '更新客户失败')
+		}
+	}
+}
+
+async function deleteCustomer(userId) {
+	try {
+		const result = unwrapServiceResult(await getService().deleteCustomer({
+			sessionUserId: getSessionUserId(),
+			userId
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '删除客户失败')
+			}
+		}
+		await loadUsers()
+		showNotification('客户已删除')
+		return {
+			success: true
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '删除客户失败')
+		}
+	}
+}
+
 async function addOrders(orderList) {
 	if (!Array.isArray(orderList) || orderList.length === 0) return {
 		success: false,
@@ -367,6 +418,8 @@ export function useStore() {
 		restoreSession,
 		addBatchUsers,
 		addOrder,
+		updateCustomer,
+		deleteCustomer,
 		addOrders,
 		getOrderMedia,
 		showNotification,

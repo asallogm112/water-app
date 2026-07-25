@@ -62,6 +62,12 @@
               </view>
             </view>
 
+            <view class="customer-action-row">
+              <view class="customer-edit-btn" @tap="openEditor(customer)">
+                <text>编辑</text>
+              </view>
+            </view>
+
             <view class="customer-meta-grid">
               <view class="meta-item">
                 <text class="meta-label">配送地址</text>
@@ -78,6 +84,55 @@
         <view class="safe-bottom"></view>
       </view>
     </scroll-view>
+
+    <view v-if="showEditor" class="editor-mask" @tap="closeEditor">
+      <view class="editor-modal" @tap.stop>
+        <view class="editor-header">
+          <text class="editor-title">编辑客户</text>
+          <text class="editor-close" @tap="closeEditor">关闭</text>
+        </view>
+        <scroll-view class="editor-body" scroll-y>
+          <view class="editor-grid">
+            <view class="editor-field">
+              <text class="editor-label">客户姓名</text>
+              <uni-easyinput class="editor-input" type="text" v-model="editForm.name" :inputBorder="false" />
+            </view>
+            <view class="editor-field">
+              <text class="editor-label">客户账号</text>
+              <uni-easyinput class="editor-input" type="text" v-model="editForm.username" :inputBorder="false" />
+            </view>
+            <view class="editor-field">
+              <text class="editor-label">配送单价</text>
+              <uni-easyinput class="editor-input" type="digit" v-model="editForm.unitPrice" :inputBorder="false" />
+            </view>
+            <view class="editor-field">
+              <text class="editor-label">手机号</text>
+              <uni-easyinput class="editor-input" type="number" v-model="editForm.phone" :inputBorder="false" />
+            </view>
+            <view class="editor-field editor-field-full">
+              <text class="editor-label">配送地址</text>
+              <uni-easyinput class="editor-input" type="text" v-model="editForm.address" :inputBorder="false" />
+            </view>
+            <view class="editor-field editor-field-full">
+              <text class="editor-label">备注</text>
+              <uni-easyinput class="editor-input" type="text" v-model="editForm.notes" :inputBorder="false" />
+            </view>
+            <view class="editor-field editor-field-full">
+              <text class="editor-label">结算方式</text>
+              <view class="editor-settle-row">
+                <view v-for="item in settleEditOptions" :key="item.value" class="editor-settle-chip" :class="{ 'editor-settle-chip-active': editForm.settlementType === item.value }" @tap="editForm.settlementType = item.value">
+                  <text>{{ item.label }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="editor-footer">
+          <view class="editor-delete-btn" @tap="confirmDelete">删除客户</view>
+          <button class="editor-save-btn" @tap="submitEdit">保存修改</button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -86,12 +141,27 @@ import { computed, ref } from 'vue'
 import { useStore } from '../../common/store.js'
 
 const store = useStore()
-const { state } = store
+const { state, updateCustomer, deleteCustomer } = store
 
 const keyword = ref('')
 const settleFilter = ref('all')
+const showEditor = ref(false)
+const editingCustomerId = ref('')
+const editForm = ref({
+  name: '',
+  username: '',
+  unitPrice: '',
+  phone: '',
+  address: '',
+  notes: '',
+  settlementType: 'daily'
+})
 const settleOptions = [
   { value: 'all', label: '全部' },
+  { value: 'daily', label: '日结' },
+  { value: 'monthly', label: '月结' }
+]
+const settleEditOptions = [
   { value: 'daily', label: '日结' },
   { value: 'monthly', label: '月结' }
 ]
@@ -114,6 +184,55 @@ const filteredCustomers = computed(() => {
 const formatPrice = (value) => {
   const num = Number(value)
   return Number.isFinite(num) ? num : 0
+}
+
+const openEditor = (customer) => {
+  editingCustomerId.value = customer._id || ''
+  editForm.value = {
+    name: customer.name || '',
+    username: customer.username || '',
+    unitPrice: String(formatPrice(customer.unitPrice)),
+    phone: customer.phone || '',
+    address: customer.address || '',
+    notes: customer.notes || '',
+    settlementType: customer.settlementType === 'monthly' ? 'monthly' : 'daily'
+  }
+  showEditor.value = true
+}
+
+const closeEditor = () => {
+  showEditor.value = false
+  editingCustomerId.value = ''
+}
+
+const submitEdit = async () => {
+  const payload = {
+    ...editForm.value,
+    unitPrice: Number(editForm.value.unitPrice || 0)
+  }
+  const result = await updateCustomer(editingCustomerId.value, payload)
+  if (!result.success) {
+    uni.showModal({ title: '保存失败', content: result.message || '更新客户失败', showCancel: false })
+    return
+  }
+  closeEditor()
+}
+
+const confirmDelete = () => {
+  uni.showModal({
+    title: '确认删除',
+    content: '删除后无法恢复，确认删除这个客户吗？',
+    confirmColor: '#dc2626',
+    success: async ({ confirm }) => {
+      if (!confirm) return
+      const result = await deleteCustomer(editingCustomerId.value)
+      if (!result.success) {
+        uni.showModal({ title: '删除失败', content: result.message || '删除客户失败', showCancel: false })
+        return
+      }
+      closeEditor()
+    }
+  })
 }
 </script>
 
@@ -148,8 +267,10 @@ const formatPrice = (value) => {
 .tag-daily{background:#ecfdf5;color:#059669;border:1px solid #d1fae5}
 .tag-monthly{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}
 .price-box{min-width:72px;text-align:right;flex-shrink:0}.price-label{display:block;font-size:9px;color:#94a3b8}.price-value{display:block;margin-top:2px;font-size:15px;font-weight:900;color:#dc2626;font-family:monospace}
+.customer-action-row{display:flex;justify-content:flex-end;margin-top:12px}.customer-edit-btn{padding:6px 12px;border-radius:999px;background:#eff6ff;border:1px solid #dbeafe;font-size:11px;font-weight:800;color:#2563eb}
 .customer-meta-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-top:14px}
 .meta-item{padding:10px 12px;background:#f8fafc;border:1px solid #e8eef5;border-radius:14px;min-width:0}.meta-item-compact{text-align:left}
 .meta-label{display:block;font-size:9px;color:#94a3b8;font-weight:700;margin-bottom:4px}.meta-value{display:block;font-size:12px;color:#334155;line-height:1.5;word-break:break-all}
+.editor-mask{position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:120;display:flex;align-items:center;justify-content:center;padding:32px 20px;box-sizing:border-box}.editor-modal{width:100%;max-width:560px;max-height:100%;background:#fff;border-radius:24px;padding:18px 16px 16px;border:1px solid rgba(226,232,240,.9);box-shadow:0 24px 60px rgba(15,23,42,.24);display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box}.editor-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #f1f5f9}.editor-title{font-size:15px;font-weight:800;color:#1e293b}.editor-close{font-size:11px;font-weight:800;color:#059669;background:#ecfdf5;padding:7px 12px;border-radius:999px;flex-shrink:0}.editor-body{flex:1;min-height:0;padding-top:12px}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.editor-field{min-width:0}.editor-field-full{grid-column:1 / -1}.editor-label{display:block;font-size:10px;font-weight:700;color:#64748b;margin-bottom:6px}.editor-input .uni-easyinput__content{border:1px solid #dbe4ee !important;border-radius:14px;background:#eee;min-height:40px;padding:0 12px}.editor-input .uni-easyinput__content-input{height:40px;font-size:13px;color:#1e293b;background:transparent}.editor-settle-row{display:flex;gap:8px}.editor-settle-chip{flex:1;text-align:center;padding:10px 0;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;font-weight:800;color:#475569}.editor-settle-chip-active{background:#0f766e;border-color:#0f766e;color:#fff}.editor-footer{display:flex;align-items:center;gap:10px;padding-top:14px;border-top:1px solid #f1f5f9;margin-top:12px}.editor-delete-btn{height:44px;padding:0 16px;border-radius:14px;background:#fff1f2;border:1px solid #fecdd3;color:#dc2626;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;white-space:nowrap}.editor-save-btn{flex:1;height:44px;background:linear-gradient(135deg,#0f766e,#10b981);color:#fff;border-radius:16px;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 20px rgba(16,185,129,.16)}
 .safe-bottom{height:32px}
 </style>
