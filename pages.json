@@ -1,0 +1,88 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {}
+  },
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/home/home",
+      "style": {
+        "navigationBarTitleText": "系统服务大厅",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/order-list/order-list",
+      "style": {
+        "navigationBarTitleText": "日账单汇总",
+        "enablePullDownRefresh": false
+      }
+    },
+		{
+			"path": "pages/batch-order-add/batch-order-add",
+      "style": {
+        "navigationBarTitleText": "智能批量录入",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/stats/stats",
+      "style": {
+        "navigationBarTitleText": "配送数据报告",
+        "enablePullDownRefresh": false
+      }
+    },
+		{
+			"path": "pages/user-add/user-add",
+			"style": {
+				"navigationBarTitleText": "批量客户开户",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/customer-list/customer-list",
+			"style": {
+				"navigationBarTitleText": "客户列表",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/profile/profile",
+      "style": {
+        "navigationBarTitleText": "个人中心",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/monthly-summary/monthly-summary",
+      "style": {
+        "navigationBarTitleText": "月度账单汇总",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/user-monthly-summary/user-monthly-summary",
+      "style": {
+        "navigationBarTitleText": "按人月对账",
+        "enablePullDownRefresh": false
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "水管家配送系统",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "backgroundColor": "#f7f8fa"
+  },
+  "condition": {
+    "current": 0,
+    "list": []
+  }
+}

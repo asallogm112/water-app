@@ -1,0 +1,101 @@
+{
+	"bsonType": "object",
+	"required": ["userName", "quantity"],
+	"permission": {
+		"read": false,
+		"create": false,
+		"update": false,
+		"delete": false
+	},
+	"properties": {
+		"_id": {
+			"description": "记录ID，系统自动生成"
+		},
+		"createdAt": {
+			"bsonType": "string",
+			"title": "创建时间",
+			"description": "格式: YYYY-MM-DD HH:mm:ss"
+		},
+		"createdDate": {
+			"bsonType": "string",
+			"title": "创建日期",
+			"description": "格式: YYYY-MM-DD"
+		},
+		"userID": {
+			"bsonType": "string",
+			"title": "客户ID",
+			"description": "客户ID",
+			"trim": "both"
+		},
+		"userName": {
+			"bsonType": "string",
+			"title": "客户姓名",
+			"description": "客户姓名(与用户信息表1:1关联)",
+			"trim": "both"
+		},
+		"quantity": {
+			"bsonType": "int",
+			"title": "送水数量",
+			"description": "本次送水数量(桶)",
+			"minimum": 0
+		},
+		"returnedBuckets": {
+			"bsonType": "int",
+			"title": "回桶数量",
+			"description": "回收空桶数量(个)",
+			"minimum": 0
+		},
+		"operator": {
+			"bsonType": "string",
+			"title": "操作人",
+			"description": "录单人(登录者自动填写)",
+			"trim": "both"
+		},
+		"unitPrice": {
+			"bsonType": "number",
+			"title": "单价",
+			"description": "配送单价(元/桶)",
+			"minimum": 0
+		},
+		"totalAmount": {
+			"bsonType": "number",
+			"title": "总金额",
+			"description": "单价×数量"
+		},
+		"actualAmountReceived": {
+			"bsonType": "number",
+			"title": "实际收款金额",
+			"description": "实际收到的金额(元)",
+			"minimum": 0
+		},
+		"dedup_key": {
+			"bsonType": "string",
+			"title": "去重键",
+			"description": "按年月-送水数量-回桶数量拼接的唯一去重键，如 202607-30-45",
+			"trim": "both",
+			"unique": true
+		},
+		"logs": {
+			"bsonType": "array",
+			"title": "日志文件",
+			"description": "现场照片/视频 Base64 或 URL 数组"
+		},
+		"settlementType": {
+			"bsonType": "string",
+			"title": "结算方式",
+			"description": "月结(monthly)或日结(daily)",
+			"enum": ["monthly", "daily"]
+		},
+		"paymentScreenshot": {
+			"bsonType": "string",
+			"title": "付款截图",
+			"description": "付款凭证图片URL或Base64"
+		},
+		"notes": {
+			"bsonType": "string",
+			"title": "备注",
+			"description": "配送备注",
+			"trim": "both"
+		}
+	}
+}

@@ -1,0 +1,65 @@
+{
+  "bsonType": "object",
+  "required": ["username", "name", "password"],
+  "permission": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "记录ID，系统自动生成"
+    },
+    "username": {
+      "bsonType": "string",
+      "title": "管理员账号",
+      "description": "管理员登录账号，唯一",
+      "trim": "both"
+    },
+    "name": {
+      "bsonType": "string",
+      "title": "管理员名称",
+      "description": "管理员显示名称",
+      "trim": "both"
+    },
+    "phone": {
+      "bsonType": "string",
+      "title": "手机号",
+      "description": "联系电话",
+      "trim": "both"
+    },
+    "address": {
+      "bsonType": "string",
+      "title": "联系地址",
+      "description": "管理员联系地址",
+      "trim": "both"
+    },
+    "notes": {
+      "bsonType": "string",
+      "title": "备注",
+      "description": "备注信息",
+      "trim": "both"
+    },
+    "password": {
+      "bsonType": "string",
+      "title": "密码",
+      "description": "登录密码"
+    },
+    "createdAt": {
+      "bsonType": "string",
+      "title": "创建时间",
+      "description": "格式: YYYY-MM-DD HH:mm:ss"
+    },
+    "createdDate": {
+      "bsonType": "string",
+      "title": "创建日期",
+      "description": "格式: YYYY-MM-DD"
+    },
+    "isAdmin": {
+      "bsonType": "bool",
+      "title": "是否管理员",
+      "description": "管理员账号固定为 true"
+    }
+  }
+}

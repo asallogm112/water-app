@@ -1,0 +1,82 @@
+{
+  "bsonType": "object",
+  "required": ["username", "name", "password"],
+  "permission": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "记录ID，系统自动生成"
+    },
+    "username": {
+      "bsonType": "string",
+      "title": "登录账号",
+      "description": "用户登录账号，唯一",
+      "trim": "both"
+    },
+    "name": {
+      "bsonType": "string",
+      "title": "姓名",
+      "description": "客户姓名/店铺名称",
+      "trim": "both"
+    },
+    "phone": {
+      "bsonType": "string",
+      "title": "手机号",
+      "description": "联系电话",
+      "trim": "both"
+    },
+    "address": {
+      "bsonType": "string",
+      "title": "配送地址",
+      "description": "详细配送地址",
+      "trim": "both"
+    },
+    "unitPrice": {
+      "bsonType": "number",
+      "title": "单价",
+      "description": "预设配送单价(元/桶)",
+      "minimum": 0
+    },
+    "notes": {
+      "bsonType": "string",
+      "title": "备注",
+      "description": "备注信息",
+      "trim": "both"
+    },
+    "password": {
+      "bsonType": "string",
+      "title": "密码",
+      "description": "登录密码"
+    },
+    "settlementType": {
+      "bsonType": "string",
+      "title": "结算方式",
+      "description": "月结(monthly)或日结(daily)",
+      "enum": ["monthly", "daily"]
+    },
+    "createdAt": {
+      "bsonType": "string",
+      "title": "创建时间",
+      "description": "格式: YYYY-MM-DD HH:mm:ss"
+    },
+    "createdDate": {
+      "bsonType": "string",
+      "title": "创建日期",
+      "description": "格式: YYYY-MM-DD"
+    },
+    "openid": {
+      "bsonType": "string",
+      "title": "微信OpenID",
+      "description": "小程序绑定的微信openid"
+    },
+    "isAdmin": {
+      "bsonType": "bool",
+      "title": "是否管理员",
+      "description": "管理员拥有全局权限"
+    }
+  }
+}
