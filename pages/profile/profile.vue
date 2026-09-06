@@ -6,15 +6,15 @@
           <view class="user-card-top">
             <view class="user-avatar">👤</view>
             <view>
-              <text class="user-name">{{ state.currentUser?.name }} <text v-if="state.currentUser?.isAdmin" class="admin-badge">🛡️ 管理员</text></text>
-              <text class="user-username">账号: @{{ state.currentUser?.username }}</text>
+				<text class="user-name">{{ state.currentUser?.userName }} <text v-if="state.currentUser?.isAdmin" class="admin-badge">🛡️ 管理员</text></text>
+              <text class="user-account">账号: @{{ state.currentUser?.userName }}</text>
             </view>
           </view>
           <view class="user-details">
             <view class="user-detail-item"><text>📱</text><text>{{ state.currentUser?.phone || '未设置' }}</text></view>
             <view class="user-detail-item"><text>📍</text><text>{{ state.currentUser?.address || '未设置' }}</text></view>
             <view v-if="!state.currentUser?.isAdmin" class="user-price-grid">
-              <view class="user-price-item"><text class="user-price-label">预设配送单价</text><text class="user-price-value">¥{{ state.currentUser?.unitPrice }} 元/桶</text></view>
+              <view class="user-price-item"><text class="user-price-label">预设配送单价</text><text class="user-price-value">¥{{ formatMoney(state.currentUser?.unitPrice) }} 元/桶</text></view>
               <view class="user-price-item"><text class="user-price-label">结算方式</text><text class="user-price-value text-emerald">{{ state.currentUser?.settlementType === 'monthly' ? '📘 月结用户' : '📗 日结用户' }}</text></view>
             </view>
           </view>
@@ -24,7 +24,7 @@
           <view class="stats-grid">
             <view class="stats-item"><text class="stats-item-label">累计购水</text><text class="stats-item-value">{{ myTotalDelivered }} <text class="stats-item-unit">桶</text></text></view>
             <view class="stats-item"><text class="stats-item-label">累计回桶</text><text class="stats-item-value">{{ myTotalReturned }} <text class="stats-item-unit">个</text></text></view>
-            <view class="stats-item"><text class="stats-item-label">累计金额</text><text class="stats-item-value stats-item-value-green">¥{{ myTotalRevenue }}</text></view>
+            <view class="stats-item"><text class="stats-item-label">累计金额</text><text class="stats-item-value stats-item-value-green">¥{{ formatMoney(myTotalRevenue) }}</text></view>
           </view>
           <view v-if="myOutstandingEmptyBuckets > 0" class="bucket-warning"><text>⚠️ 您尚有 {{ myOutstandingEmptyBuckets }} 个空水桶未退还归仓。</text></view>
         </view>
@@ -43,10 +43,11 @@
 <script setup>
 import { computed } from 'vue'
 import { useStore } from '../../common/store.js'
+import { formatMoney } from '../../common/utils.js'
 
 const store = useStore()
 const { state, logout } = store
-const myOrders = computed(() => state.orders.filter(o => o.userName === state.currentUser?.name))
+const myOrders = computed(() => state.orders.filter(o => o.userName === state.currentUser?.userName))
 const myTotalRevenue = computed(() => myOrders.value.reduce((s, o) => s + o.totalAmount, 0))
 const myTotalDelivered = computed(() => myOrders.value.reduce((s, o) => s + o.quantity, 0))
 const myTotalReturned = computed(() => myOrders.value.reduce((s, o) => s + o.returnedBuckets, 0))
@@ -65,7 +66,7 @@ const handleLogout = () => { logout(); uni.reLaunch({ url: '/pages/login/login' 
 .user-avatar{width:50px;height:50px;border-radius:18px;background:linear-gradient(135deg,#d1fae5,#ecfdf5);display:flex;align-items:center;justify-content:center;font-size:28px;box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}
 .user-name{font-size:14px;font-weight:700;color:#1e293b}
 .admin-badge{font-size:9px;background:#fef3c7;color:#b45309;padding:2px 6px;border-radius:999px;font-weight:900}
-.user-username{font-size:10px;color:#94a3b8;font-family:monospace;margin-top:2px;display:block}
+.user-account{font-size:10px;color:#94a3b8;font-family:monospace;margin-top:2px;display:block}
 .user-details{margin-top:12px;padding-top:12px;border-top:1px solid #f1f5f9}
 .user-detail-item{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#475569;margin-bottom:8px}
 .user-price-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}

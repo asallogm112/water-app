@@ -12,7 +12,7 @@
 				<view class="welcome-header">
 					<view>
 						<text class="welcome-greeting">
-							你好，{{ state.currentUser.name }}
+							你好，{{ state.currentUser.userName }}
 							<text class="welcome-badge">{{ state.currentUser.isAdmin ? '系统管理员' : '配送客户' }}</text>
 						</text>
 					</view>
@@ -31,11 +31,11 @@
 					</view>
 					<view class="summary-item summary-item-border">
 						<text class="summary-label">应收金额</text>
-						<text class="summary-value summary-value-red">¥{{ todayStats.receivable }}</text>
+						<text class="summary-value summary-value-red">¥{{ formatMoney(todayStats.receivable) }}</text>
 					</view>
 					<view class="summary-item">
 						<text class="summary-label">实收金额</text>
-						<text class="summary-value summary-value-green">¥{{ todayStats.actualReceived }}</text>
+						<text class="summary-value summary-value-green">¥{{ formatMoney(todayStats.actualReceived) }}</text>
 					</view>
 				</view>
 			</view>
@@ -51,7 +51,7 @@
 				</view>
 			</view>
 
-			<button class="batch-order-btn" @tap="navigate('batch-order-add')">批量录入订单</button>
+			<button v-if="false" class="batch-order-btn" @tap="navigate('batch-order-add')">批量录入订单</button>
 
 			<view class="safe-bottom"></view>
 		</view>
@@ -76,6 +76,7 @@
 	} from '../../common/store.js'
 	import {
 		createUserUnitPriceMap,
+		formatMoney,
 		getOrderReceivableAmount,
 		getOrderActualReceivedAmount
 	} from '../../common/utils.js'
@@ -112,7 +113,7 @@
 		const filteredOrders = state.orders.filter(o => {
 			if (!state.currentUser) return false
 			return o.createdDate === today.value &&
-				(state.currentUser.isAdmin || o.userName === state.currentUser.name)
+				(state.currentUser.isAdmin || o.userName === state.currentUser.userName)
 		})
 		return {
 			quantity: filteredOrders.reduce((s, o) => s + o.quantity, 0),
@@ -164,13 +165,16 @@
 				desc: '信息查询',
 				iconClass: 'func-icon-blue',
 				action: 'customer-list'
-			}, {
-				key: 'user-add',
+			})
+		}
+		if (state.currentUser?.isAdmin) {
+			items.push({
+				key: 'misc-records',
 				icon: '🗂️',
-				name: '批量开户',
-				desc: '客户导入',
+				name: '工资报销',
+				desc: '工资报销',
 				iconClass: 'func-icon-amber',
-				action: 'user-add'
+				action: 'misc-records'
 			})
 		}
 		items.push({
@@ -193,8 +197,9 @@
 			'user-add': '/pages/user-add/user-add',
 			'profile': '/pages/profile/profile',
 			'monthly-summary': '/pages/monthly-summary/monthly-summary',
-			'user-monthly-summary': '/pages/user-monthly-summary/user-monthly-summary'
-		}
+			'user-monthly-summary': '/pages/user-monthly-summary/user-monthly-summary',
+			'misc-records': '/pages/misc-records/misc-records'
+			}
 		uni.navigateTo({
 			url: pageMap[tab]
 		})
@@ -240,16 +245,18 @@
 
 	.empty-btn {
 		margin-top: 16px;
-		padding: 10px 32px;
-		background: #10b981;
+		padding: 12px 32px;
+		background: linear-gradient(135deg, #0f766e, #10b981);
 		color: #fff;
-		border-radius: 12px;
+		border-radius: 14px;
 		font-size: 14px;
+		font-weight: 800;
+		box-shadow: 0 10px 20px rgba(16, 185, 129, .16);
 	}
 
 	.home-content {
 		flex: 1;
-		padding: 16px 12px 12px 12px;
+		padding: 16px;
 		box-sizing: border-box;
 	}
 
@@ -402,7 +409,7 @@
 	.menu-card {
 		background: #fff;
 		border: 1px solid #e8eef5;
-		border-radius: 16px;
+		border-radius: 18px;
 		min-height: 84px;
 		padding: 10px 6px;
 		display: flex;
@@ -411,7 +418,7 @@
 		justify-content: center;
 		text-align: center;
 		position: relative;
-		box-shadow: 0 8px 18px rgba(15, 23, 42, .04);
+		box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
 		min-width: 0;
 		box-sizing: border-box;
 	}

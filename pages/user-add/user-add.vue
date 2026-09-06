@@ -4,40 +4,49 @@
     <view v-if="!state.currentUser?.isAdmin" class="no-permission">
       <text class="no-perm-icon">🛡️</text>
       <text class="no-perm-title">无访问权限</text>
-      <text class="no-perm-desc">管理员新增用户页仅限超级管理员角色访问。请使用 admin 账号登录。</text>
+      <text class="no-perm-desc">批量开户仅限管理员账号访问。</text>
     </view>
 
-    <scroll-view v-else class="form-scroll" scroll-y>
+    <scroll-view v-else class="form-scroll" :scroll-y="!showDuplicateModal">
       <view class="form-inner">
         <view v-if="successMsg" class="success-banner">
-          <text class="success-icon"></text>
+          <text class="success-icon">✓</text>
           <view><text class="success-title">{{ successMsg }}</text><text class="success-sub">客户账号可立即用于智能匹配和日结/月结核算。</text></view>
         </view>
         <view v-if="error" class="error-banner"><text>{{ error }}</text></view>
 
         <view class="card batch-card">
-          <textarea class="batch-textarea" :rows="4" v-model="batchText" placeholder="每行一个：客户名 单价 结算方式；如：张三 3.0 日结" placeholder-class="input-placeholder" />
+          <textarea class="batch-textarea" :rows="4" maxlength="-1" v-model="batchText" placeholder="每行一个：客户名 单价 结算方式；如：张三 3.0 日结" placeholder-class="input-placeholder" />
           <button class="parse-btn" @tap="handleParseBatch">解析客户</button>
+        </view>
+        <view v-if="parsedBatchUsers.length > 0" class="card result-card">
+          <text class="result-title">解析数据</text>
+          <view v-for="(u, idx) in parsedBatchUsers" :key="u.id || `parsed-${idx}`" class="result-row">
+            <text class="result-line">{{ formatDuplicateUserLine(u) }}</text>
+            <view class="result-delete-btn" @tap="handleDeleteParsedUser(u.id)">删除</view>
+          </view>
+          <button class="btn-confirm-batch" @tap="handleConfirmBatchUsers">确认批量新增 {{ parsedBatchUsers.length }} 位客户</button>
         </view>
         <view class="safe-bottom"></view>
       </view>
     </scroll-view>
 
-    <view v-if="showBatchPopup" class="batch-popup-mask" @tap="showBatchPopup = false">
-      <view class="batch-popup" @tap.stop>
-        <view class="batch-popup-header">
-          <view>
-            <text class="batch-popup-title">批量开户结果</text>
+    <view v-if="showDuplicateModal" class="duplicate-modal-mask" @tap.stop @touchmove.stop.prevent>
+      <view class="duplicate-modal" @tap.stop @touchmove.stop>
+        <text class="duplicate-modal-title">以下数据重复提交了</text>
+        <scroll-view class="duplicate-modal-list" scroll-y @touchmove.stop>
+          <view v-if="duplicateLines.length > 0" class="duplicate-modal-section">
+            <text class="duplicate-modal-section-title">重复数据</text>
+            <text v-for="(line, idx) in duplicateLines" :key="`duplicate-${idx}`" class="duplicate-modal-line">{{ line }}</text>
           </view>
-          <text class="batch-popup-close" @tap="showBatchPopup = false">完成</text>
-        </view>
-        <scroll-view class="batch-popup-list" scroll-y>
-          <view v-for="(u, idx) in parsedBatchUsers" :key="idx" class="batch-preview-item">
-            <text class="batch-preview-line">{{ u.name }} {{ Number(u.unitPrice).toFixed(1) }}元/桶 {{ u.settlementType === 'monthly' ? '月结' : '日结' }}</text>
+          <view v-if="uniqueLines.length > 0" class="duplicate-modal-section">
+            <text class="duplicate-modal-section-title">未重复数据</text>
+            <text v-for="(line, idx) in uniqueLines" :key="`unique-${idx}`" class="duplicate-modal-line">{{ line }}</text>
           </view>
         </scroll-view>
-        <view class="batch-popup-footer">
-          <button class="btn-confirm-batch" @tap="handleConfirmBatchUsers">确认批量新增 {{ parsedBatchUsers.length }} 位客户</button>
+        <view class="duplicate-modal-actions">
+          <view class="duplicate-modal-btn duplicate-modal-btn-muted" @tap="resolveDuplicateModal(false)">关闭</view>
+          <view class="duplicate-modal-btn duplicate-modal-btn-primary" @tap="resolveDuplicateModal(true)">提交未重复</view>
         </view>
       </view>
     </view>
@@ -47,7 +56,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useStore } from '../../common/store.js'
-import { parseBatchUsersText } from '../../common/utils.js'
+import { formatMoney, parseBatchUsersText } from '../../common/utils.js'
 
 const store = useStore()
 const { state, addBatchUsers } = store
@@ -55,44 +64,59 @@ const { state, addBatchUsers } = store
 const batchText = ref('')
 const parsedBatchUsers = ref([])
 const successMsg = ref(''); const error = ref('')
-const showBatchPopup = ref(false)
+const showDuplicateModal = ref(false)
+const duplicateLines = ref([])
+const uniqueLines = ref([])
+let duplicateModalResolver = null
 
 const duplicateBatchUsers = computed(() =>
   parsedBatchUsers.value.filter(u => u.duplicateInDatabase || u.duplicateInBatch)
 )
+const nonDuplicateBatchUsers = computed(() =>
+  parsedBatchUsers.value.filter(u => !u.duplicateInDatabase && !u.duplicateInBatch)
+)
 const duplicateBatchCount = computed(() => duplicateBatchUsers.value.length)
 const validBatchCount = computed(() => Math.max(0, parsedBatchUsers.value.length - duplicateBatchCount.value))
 
-const showDuplicateAlert = (names = []) => {
-  const preview = names.slice(0, 6).join('、')
-  const extra = names.length > 6 ? ` 等 ${names.length} 个客户` : ''
-  uni.showModal({
-    title: '发现重复客户',
-    content: preview ? `${preview}${extra} 已存在或重复，请修改后再提交。` : '存在重复客户，请修改后再提交。',
-    showCancel: false,
-    confirmText: '知道了'
-  })
+const formatDuplicateUserLine = (user) => {
+  if (!user) return ''
+  if (typeof user === 'string') return user
+  const userName = user.userName || ''
+  const unitPrice = Number(user.unitPrice)
+  const settlement = user.settlementType === 'monthly' ? '月结' : '日结'
+  const priceText = formatMoney(unitPrice)
+  return `${userName} ${priceText} ${settlement}`.trim()
+}
+
+const showDuplicateAlert = (users = [], uniqueUsers = []) => new Promise((resolve) => {
+  duplicateLines.value = users.map(formatDuplicateUserLine).filter(Boolean)
+  uniqueLines.value = uniqueUsers.map(formatDuplicateUserLine).filter(Boolean)
+  duplicateModalResolver = resolve
+  showDuplicateModal.value = true
+})
+
+const resolveDuplicateModal = (shouldSubmit) => {
+  showDuplicateModal.value = false
+  const resolver = duplicateModalResolver
+  duplicateModalResolver = null
+  duplicateLines.value = []
+  uniqueLines.value = []
+  if (resolver) resolver(!!shouldSubmit)
 }
 
 const refreshBatchDuplicateFlags = () => {
   const usernameCountMap = new Map()
-  const nameCountMap = new Map()
   parsedBatchUsers.value.forEach(user => {
-    const usernameKey = (user.username || '').toLowerCase()
-    const nameKey = (user.name || '').trim().toLowerCase()
+    const usernameKey = (user.userName || '').trim().toLowerCase()
     usernameCountMap.set(usernameKey, (usernameCountMap.get(usernameKey) || 0) + 1)
-    nameCountMap.set(nameKey, (nameCountMap.get(nameKey) || 0) + 1)
   })
   parsedBatchUsers.value = parsedBatchUsers.value.map(user => {
-    const usernameKey = (user.username || '').toLowerCase()
-    const nameKey = (user.name || '').trim().toLowerCase()
-    const duplicateUsernameInBatch = (usernameCountMap.get(usernameKey) || 0) > 1
-    const duplicateNameInBatch = (nameCountMap.get(nameKey) || 0) > 1
+    const usernameKey = (user.userName || '').trim().toLowerCase()
+    const duplicateUserNameInBatch = (usernameCountMap.get(usernameKey) || 0) > 1
     return {
       ...user,
-      duplicateUsernameInBatch,
-      duplicateNameInBatch,
-      duplicateInBatch: duplicateUsernameInBatch || duplicateNameInBatch
+      duplicateUserNameInBatch,
+      duplicateInBatch: duplicateUserNameInBatch
     }
   })
 }
@@ -105,27 +129,32 @@ const handleParseBatch = () => {
   else {
     parsedBatchUsers.value = list
     refreshBatchDuplicateFlags()
-    showBatchPopup.value = true
   }
 }
+
+const handleDeleteParsedUser = (id) => {
+  parsedBatchUsers.value = parsedBatchUsers.value.filter(user => user.id !== id)
+  refreshBatchDuplicateFlags()
+}
+
 const handleConfirmBatchUsers = async () => {
   if (parsedBatchUsers.value.length === 0) { error.value = '请先解析客户文本'; return }
-  const invalidUser = parsedBatchUsers.value.find(u => !u.name || !u.name.trim() || !u.username || !u.username.trim() || Number(u.unitPrice) < 0)
+  const invalidUser = parsedBatchUsers.value.find(u => !u.userName || !u.userName.trim() || Number(u.unitPrice) < 0)
   if (invalidUser) {
-    error.value = '批量列表中存在空客户名、空账号或负数单价，请修正后再提交'
+    error.value = '批量列表中存在空客户名或负数单价，请修正后再提交'
     return
   }
+  let submitUsers = parsedBatchUsers.value
   if (duplicateBatchUsers.value.length > 0) {
-    showDuplicateAlert(duplicateBatchUsers.value.map(u => u.name || u.username))
-    return
+    const shouldSubmitUnique = await showDuplicateAlert(duplicateBatchUsers.value, nonDuplicateBatchUsers.value)
+    if (!shouldSubmitUnique) return
+    submitUsers = nonDuplicateBatchUsers.value
+    if (submitUsers.length === 0) return
   }
-  const res = await addBatchUsers(parsedBatchUsers.value)
+  const res = await addBatchUsers(submitUsers)
   if (!res.success) {
-    error.value = '批量开户失败，请稍后重试'
+    error.value = res.message || '批量开户失败'
     return
-  }
-  if (res.skippedCount > 0) {
-    showDuplicateAlert(res.duplicateUsers)
   }
   successMsg.value = `批量操作成功！已新增 ${res.addedCount} 位客户`
   parsedBatchUsers.value = []; batchText.value = ''
@@ -135,7 +164,7 @@ const handleConfirmBatchUsers = async () => {
 </script>
 
 <style lang="scss" scoped>
-.user-add-page{min-height:100vh;background:linear-gradient(180deg,#f8fbfa 0%,#f1f5f9 100%);display:flex;flex-direction:column}
+.user-add-page{min-height:100vh;background:linear-gradient(180deg,#f8fbfa 0%,#f2f6f9 100%);display:flex;flex-direction:column}
 .no-permission{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center}
 .no-perm-icon{font-size:32px;margin-bottom:12px}.no-perm-title{font-size:16px;font-weight:700;color:#1e293b}
 .no-perm-desc{font-size:12px;color:#94a3b8;margin-top:8px;max-width:260px;line-height:1.5}
@@ -149,16 +178,9 @@ const handleConfirmBatchUsers = async () => {
 .batch-textarea{display:block;width:calc(100% - 26px);max-width:calc(100% - 26px);padding:12px;background:#eee;border:1px solid #dbe4ee;border-radius:14px;font-size:14px;font-family:monospace;color:#1e293b;resize:none}
 .input-placeholder{color:#cbd5e1}
 .batch-hint{font-size:10px;color:#94a3b8;display:block;margin-top:4px}
-.parse-btn{width:100%;height:40px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border-radius:12px;font-size:13px;font-weight:700;margin-top:10px;display:flex;align-items:center;justify-content:center;letter-spacing:0;box-shadow:0 8px 16px rgba(20,184,166,.14)}
-.batch-popup-mask{position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:120;display:flex;align-items:center;justify-content:center;padding:33px 28px}
-.batch-popup{width:100%;max-width:560px;max-height:100%;background:#fff;border-radius:24px;padding:18px 16px 16px;box-shadow:0 24px 60px rgba(15,23,42,.24);display:flex;flex-direction:column;border:1px solid rgba(226,232,240,.9);box-sizing:border-box;overflow:hidden}
-.batch-popup-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #f1f5f9}
-.batch-popup-title{display:block;font-size:14px;font-weight:800;color:#1e293b}
-.batch-popup-close{font-size:11px;font-weight:800;color:#059669;background:#ecfdf5;padding:7px 12px;border-radius:999px;flex-shrink:0}
-.batch-popup-list{flex:1;min-height:0;padding-top:10px;padding-bottom:12px;box-sizing:border-box}
-.batch-preview-item{background:#f8fafc;padding:14px 16px;border-radius:16px;margin-bottom:10px;border:1px solid #e6edf4}
-.batch-preview-line{display:block;font-size:14px;font-weight:700;color:#1e293b}
-.batch-popup-footer{padding-top:12px;border-top:1px solid #f1f5f9;background:#fff}
+.parse-btn{width:100%;height:40px;background:linear-gradient(135deg,#0f766e,#10b981);color:#fff;border-radius:12px;font-size:13px;font-weight:700;margin-top:10px;display:flex;align-items:center;justify-content:center;letter-spacing:0;box-shadow:0 8px 16px rgba(16,185,129,.14)}
+.result-card{padding:16px}.result-title{display:block;font-size:12px;font-weight:800;color:#1e293b;margin-bottom:10px}.result-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9}.result-line{display:block;flex:1;min-width:0;font-size:13px;font-weight:700;color:#334155}.result-delete-btn{flex-shrink:0;padding:6px 10px;background:#fff1f2;border:1px solid #fecdd3;border-radius:10px;font-size:12px;font-weight:800;color:#dc2626}
 .btn-confirm-batch{width:100%;height:44px;background:linear-gradient(135deg,#0f766e,#10b981);color:#fff;border-radius:16px;font-size:14px;font-weight:800;margin-top:0;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 10px 20px rgba(16,185,129,.16)}
+.duplicate-modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:130;display:flex;align-items:flex-start;justify-content:center;padding:20px 24px 24px;box-sizing:border-box}.duplicate-modal{width:100%;max-width:560px;background:#fff;border-radius:24px;padding:18px 16px 16px;border:1px solid rgba(226,232,240,.9);box-shadow:0 24px 60px rgba(15,23,42,.24);box-sizing:border-box}.duplicate-modal-title{display:block;font-size:15px;font-weight:800;color:#1e293b}.duplicate-modal-list{max-height:320px;margin-top:12px;padding:2px 0 4px}.duplicate-modal-section+.duplicate-modal-section{margin-top:12px}.duplicate-modal-section-title{display:block;font-size:12px;font-weight:800;color:#64748b;margin-bottom:4px}.duplicate-modal-line{display:block;padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px;font-weight:700;color:#334155}.duplicate-modal-actions{display:flex;gap:10px;margin-top:14px}.duplicate-modal-btn{flex:1;height:44px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800}.duplicate-modal-btn-muted{background:#f8fafc;border:1px solid #e2e8f0;color:#475569}.duplicate-modal-btn-primary{background:linear-gradient(135deg,#0f766e,#10b981);color:#fff;box-shadow:0 10px 20px rgba(16,185,129,.16)}
 .safe-bottom{height:32px}
 </style>

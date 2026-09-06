@@ -21,7 +21,7 @@
 
 <style>
 page {
-  background-color: #f7f8fa;
+  background-color: #f8fbfa;
 }
 
 text,
@@ -39,6 +39,7 @@ input,
 textarea,
 .uni-easyinput__content {
   background-color: #eee !important;
+  border-radius: 14px;
 }
 
 .uni-easyinput__content.is-focused {

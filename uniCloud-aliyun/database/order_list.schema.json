@@ -71,7 +71,7 @@
 		"dedup_key": {
 			"bsonType": "string",
 			"title": "去重键",
-			"description": "按年月-送水数量-回桶数量拼接的唯一去重键，如 202607-30-45",
+			"description": "按客户名+日期/送水数量-回桶数量拼接的唯一去重键，如 老王+2026-07-25/30-50",
 			"trim": "both",
 			"unique": true
 		},

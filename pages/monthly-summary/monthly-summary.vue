@@ -22,7 +22,7 @@
             <text class="summary-header-title">
               💳 {{ selectedMonth !== 'ALL' ? selectedMonth.replace('-', '年') + '月 汇总核算' : (state.currentUser?.isAdmin ? '平台月度账单汇总' : '个人月度消费汇总') }}
             </text>
-            <text class="summary-header-count">共 {{ stats.orderCount }} 笔配送</text>
+            <view class="summary-export-btn" @tap="showExportModal = true"><text>导出</text></view>
           </view>
 
           <view class="summary-grid">
@@ -36,11 +36,11 @@
             </view>
             <view class="summary-item summary-item-blue">
               <view class="summary-item-label text-receivable">应收总额</view>
-              <text class="summary-item-value text-receivable-dark">¥{{ stats.totalReceivable }}</text>
+              <text class="summary-item-value text-receivable-dark">¥{{ formatMoney(stats.totalReceivable) }}</text>
             </view>
             <view class="summary-item summary-item-green-dark">
               <view class="summary-item-label">实收金额</view>
-              <text class="summary-item-value">¥{{ stats.totalActualReceived }}</text>
+              <text class="summary-item-value">¥{{ formatMoney(stats.totalActualReceived) }}</text>
             </view>
           </view>
 
@@ -48,11 +48,11 @@
           <view class="split-row">
             <view class="split-item">
               <text class="split-label">日结单应收:</text>
-              <text class="split-value split-value-red">¥{{ stats.dailyReceivable }}</text>
+              <text class="split-value split-value-red">¥{{ formatMoney(stats.dailyReceivable) }}</text>
             </view>
             <view class="split-item">
               <text class="split-label">月结单应收:</text>
-              <text class="split-value split-value-red">¥{{ stats.monthlyReceivable }}</text>
+              <text class="split-value split-value-red">¥{{ formatMoney(stats.monthlyReceivable) }}</text>
             </view>
           </view>
         </view>
@@ -73,13 +73,13 @@
                 <text class="month-header-count">{{ m.orderCount }} 笔订单</text>
               </text>
               <view class="month-header-stats">
-                <text class="month-header-stat">发水: <text class="stat-bold">{{ m.quantity }}</text> 桶</text>
-                <text class="month-header-stat">回桶: <text class="stat-bold">{{ m.returnedBuckets }}</text> 个</text>
-                <text class="month-header-stat">应收款: <text class="stat-bold text-receivable">¥{{ m.totalAmount }}</text></text>
-                <text class="month-header-stat">已付款: <text class="stat-bold text-emerald">¥{{ m.actualAmount }}</text></text>
+                <view class="month-header-stat"><text class="month-header-stat-label">发水:</text><text class="stat-bold month-header-stat-value">{{ m.quantity }} 桶</text></view>
+                <view class="month-header-stat"><text class="month-header-stat-label">回桶:</text><text class="stat-bold month-header-stat-value">{{ m.returnedBuckets }} 个</text></view>
+                <view class="month-header-stat"><text class="month-header-stat-label">应收款:</text><text class="stat-bold text-receivable month-header-stat-value">¥{{ formatMoney(m.totalAmount) }}</text></view>
+                <view class="month-header-stat"><text class="month-header-stat-label">已付款:</text><text class="stat-bold text-emerald month-header-stat-value">¥{{ formatMoney(m.actualAmount) }}</text></view>
               </view>
             </view>
-            <text class="month-arrow">{{ expandedMonths[m.month] ? '折叠' : '展开按日列表' }} {{ expandedMonths[m.month] ? '▲' : '▼' }}</text>
+            <text class="month-arrow">{{ expandedMonths[m.month] ? '折叠' : '展开' }} {{ expandedMonths[m.month] ? '▲' : '▼' }}</text>
           </view>
 
           <!-- 按日展开 -->
@@ -104,11 +104,11 @@
               <view class="day-stats-row">
                 <view class="day-stat day-stat-blue">
                   <text class="day-stat-label">当日应收</text>
-                  <text class="day-stat-value text-receivable">¥{{ day.totalAmount }}</text>
+                  <text class="day-stat-value text-receivable">¥{{ formatMoney(day.totalAmount) }}</text>
                 </view>
                 <view class="day-stat day-stat-blue">
                   <text class="day-stat-label">当日已付</text>
-                  <text class="day-stat-value text-emerald">¥{{ day.actualAmount }}</text>
+                  <text class="day-stat-value text-emerald">¥{{ formatMoney(day.actualAmount) }}</text>
                 </view>
               </view>
             </view>
@@ -118,25 +118,97 @@
         <view class="safe-bottom"></view>
       </view>
     </scroll-view>
+
+    <view v-if="showExportModal" class="export-modal-mask" @tap="showExportModal = false" @touchmove.stop.prevent>
+      <view class="export-modal" @tap.stop @touchmove.stop>
+        <view class="export-modal-header">
+          <text class="export-modal-title">导出方式</text>
+          <text class="export-modal-close" @tap="showExportModal = false">关闭</text>
+        </view>
+        <view class="export-option-list">
+          <view v-for="option in exportOptions" :key="option.value" class="export-option-item" @tap="handleExportOption(option.value)">
+            <text>{{ option.label }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { useStore } from '../../common/store.js'
-import { createUserUnitPriceMap, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
+import { createUserUnitPriceMap, formatMoney, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
+import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 
 const store = useStore()
 const { state } = store
 const userUnitPriceMap = computed(() => createUserUnitPriceMap(state.users))
+const CALENDAR_START_MONTH = '2000-01'
+const MONTHLY_SUMMARY_SELECTED_MONTH_KEY = 'monthly_summary_selected_month'
+// 月份折叠状态持久化
+const MONTHLY_SUMMARY_EXPANDED_KEY = 'monthly_summary_expanded_map'
+
+const readExpandedMonths = () => {
+  try {
+    const raw = uni.getStorageSync(MONTHLY_SUMMARY_EXPANDED_KEY)
+    if (!raw) return {}
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (error) {
+    return {}
+  }
+}
+
+const persistExpandedMonths = () => {
+  uni.setStorageSync(MONTHLY_SUMMARY_EXPANDED_KEY, JSON.stringify(expandedMonths.value))
+}
 
 const selectedMonth = ref('ALL')
-const expandedMonths = ref({})
+const expandedMonths = ref(readExpandedMonths())
+const showExportModal = ref(false)
 const currentMonth = computed(() => store.formatDate(new Date()).substring(0, 7))
+const exportOptions = [
+  { value: 'excel', label: 'Excel' }
+]
 
-const monthList = computed(() =>
-  [...new Set(state.orders.map(o => o.createdDate?.substring(0, 7)).filter(Boolean))].sort((a, b) => b.localeCompare(a))
-)
+const restoreSelectedMonth = () => {
+  const storedMonth = String(uni.getStorageSync(MONTHLY_SUMMARY_SELECTED_MONTH_KEY) || '').trim()
+  if (!storedMonth) {
+    selectedMonth.value = 'ALL'
+    return
+  }
+  if (storedMonth === 'ALL') {
+    selectedMonth.value = 'ALL'
+    return
+  }
+  selectedMonth.value = storedMonth
+}
+
+const persistSelectedMonth = (value) => {
+  if (!value) return
+  uni.setStorageSync(MONTHLY_SUMMARY_SELECTED_MONTH_KEY, value)
+}
+
+restoreSelectedMonth()
+
+const buildMonthRange = (startValue, endValue) => {
+  const start = parseMonthString(startValue)
+  const end = parseMonthString(endValue)
+  if (!start || !end) return [currentMonth.value]
+  const months = []
+  const cursor = new Date(start.year, start.month - 1, 1)
+  const endDate = new Date(end.year, end.month - 1, 1)
+  while (cursor.getTime() <= endDate.getTime()) {
+    months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+  return months.reverse()
+}
+
+const monthList = computed(() => {
+  return buildMonthRange(CALENDAR_START_MONTH, currentMonth.value)
+})
 
 const monthOptions = computed(() => ['全部月份', ...monthList.value])
 const monthIndex = computed(() => {
@@ -149,6 +221,7 @@ const monthDisplayLabel = computed(() => selectedMonth.value === 'ALL' ? '全部
 const onMonthChange = (e) => {
   const val = e.detail.value
   selectedMonth.value = val === 0 ? 'ALL' : monthList.value[val - 1]
+  persistSelectedMonth(selectedMonth.value)
 }
 
 const isNextMonthDisabled = computed(() => {
@@ -166,26 +239,30 @@ const shiftMonth = (offset) => {
   const latestMonth = monthList.value[0] || currentMonth.value
   if (offset > 0 && selectedMonth.value === latestMonth) {
     selectedMonth.value = 'ALL'
+    persistSelectedMonth(selectedMonth.value)
     return
   }
   if (offset < 0 && selectedMonth.value === 'ALL') {
     selectedMonth.value = latestMonth
+    persistSelectedMonth(selectedMonth.value)
     return
   }
   const activeMonth = selectedMonth.value === 'ALL' ? latestMonth : selectedMonth.value
   const parsed = parseMonthString(activeMonth)
   if (!parsed) {
     selectedMonth.value = latestMonth
+    persistSelectedMonth(selectedMonth.value)
     return
   }
   const baseDate = new Date(parsed.year, parsed.month - 1, 1)
   baseDate.setMonth(baseDate.getMonth() + offset)
   selectedMonth.value = `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, '0')}`
+  persistSelectedMonth(selectedMonth.value)
 }
 
 const filteredOrders = computed(() =>
   state.orders.filter(o => {
-    if (!state.currentUser?.isAdmin && o.userName !== state.currentUser?.name) return false
+    if (!state.currentUser?.isAdmin && o.userName !== state.currentUser?.userName) return false
     if (selectedMonth.value !== 'ALL' && !o.createdDate?.startsWith(selectedMonth.value)) return false
     return true
   })
@@ -193,6 +270,121 @@ const filteredOrders = computed(() =>
 
 const getReceivableAmount = (order) => getOrderReceivableAmount(order, userUnitPriceMap.value)
 const getActualAmount = (order) => getOrderActualReceivedAmount(order)
+
+const buildMonthlySummarySheetRows = () => {
+  const title = selectedMonth.value === 'ALL'
+    ? (state.currentUser?.isAdmin ? '平台月度账单汇总' : '个人月度消费汇总')
+    : `${selectedMonth.value.replace('-', '年')}月 汇总核算`
+  const headerRow = [
+    { value: '月份', style: 'header' },
+    { value: '发水', style: 'header' },
+    { value: '回桶', style: 'header' },
+    { value: '应收', style: 'header' },
+    { value: '实收', style: 'header' }
+  ]
+  const rows = [
+    [{ value: title, style: 'title' }],
+    ['总发水', stats.value.totalQuantity],
+    ['总回桶', stats.value.totalReturnedBuckets],
+    ['总应收', stats.value.totalReceivable],
+    ['总实收', stats.value.totalActualReceived],
+    ['日结应收', stats.value.dailyReceivable],
+    ['月结应收', stats.value.monthlyReceivable],
+    ['', '', '', '', ''],
+    headerRow
+  ]
+  sortedMonthGroups.value.forEach(group => {
+    rows.push([formatMonth(group.month), group.quantity, group.returnedBuckets, group.totalAmount, group.actualAmount])
+  })
+  const getCellDisplayLength = (cell) => {
+    const value = cell && typeof cell === 'object' && !Array.isArray(cell) ? cell.value : cell
+    const text = String(value ?? '')
+    let length = 0
+    for (const char of text) {
+      length += /[\u0000-\u00ff]/.test(char) ? 1 : 2
+    }
+    return length
+  }
+  const columnWidths = headerRow.map((_, columnIndex) => {
+    const maxLength = rows.reduce((max, row) => {
+      const cells = Array.isArray(row) ? row : [row]
+      return Math.max(max, getCellDisplayLength(cells[columnIndex]))
+    }, 0)
+    const baseWidth = Math.max(maxLength + 4, 12)
+    if (columnIndex === 0 || columnIndex === 1) {
+      return Math.max(baseWidth - 2, 10)
+    }
+    return baseWidth
+  })
+  return {
+    rows,
+    defaultRowHeight: 27,
+    columnWidths,
+    rowHeights: {
+      1: 32,
+      8: 20
+    },
+    merges: [
+      { start: 'A1', end: 'E1' }
+    ]
+  }
+}
+
+const buildMonthlyDetailSheetRows = () => {
+  const formatRemarkForExcel = (value) => {
+    const text = String(value || '').trim()
+    if (!text) return ''
+    let displayLength = 0
+    let result = ''
+    for (const char of text) {
+      const charLength = /[\u0000-\u00ff]/.test(char) ? 1 : 2
+      if (displayLength + charLength > 24) {
+        return `${result}...`
+      }
+      result += char
+      displayLength += charLength
+    }
+    return result
+  }
+  const rows = [[
+    '月份', '日期', '客户', '结算方式', '数量', '回桶', '应收', '实收', '备注'
+  ]]
+  sortedMonthGroups.value.forEach(group => {
+    getSortedDays(group).forEach(day => {
+      day.orders.forEach(order => {
+        rows.push([
+          formatMonth(group.month),
+          order.createdDate || '',
+          order.userName || '',
+          order.settlementType === 'monthly' ? '月结' : '日结',
+          Number(order.quantity) || 0,
+          Number(order.returnedBuckets) || 0,
+          Number(getReceivableAmount(order)) || 0,
+          Number(getActualAmount(order)) || 0,
+          formatRemarkForExcel(order.notes)
+        ])
+      })
+    })
+  })
+  return {
+    rows,
+    columnWidths: [12, 16, 12, 10, 10, 10, 10, 10, 24]
+  }
+}
+
+const handleExportOption = (type) => {
+  showExportModal.value = false
+  if (type === 'excel') {
+    exportExcelWorkbook({
+      fileName: selectedMonth.value === 'ALL' ? '月账单汇总' : `${selectedMonth.value}-月账单`,
+      sheets: [
+        { name: '汇总', ...buildMonthlySummarySheetRows() },
+        { name: '明细', ...buildMonthlyDetailSheetRows() }
+      ]
+    }).then(showExcelPreviewShareActions).catch(() => {})
+    return
+  }
+}
 
 const stats = computed(() => {
   let q = 0, r = 0, receivable = 0, actual = 0, daily = 0, monthly = 0
@@ -250,6 +442,7 @@ const sortedMonthGroups = computed(() =>
 
 const toggleMonth = (monthKey) => {
   expandedMonths.value = { ...expandedMonths.value, [monthKey]: !expandedMonths.value[monthKey] }
+  persistExpandedMonths()
 }
 
 const getSortedDays = (m) => Object.values(m.days).sort((a, b) => b.date.localeCompare(a.date))
@@ -288,7 +481,7 @@ const navigateToOrderList = (date) => {
 .summary-card { padding: 18px; margin-bottom: 16px; }
 .summary-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; margin-bottom: 12px; }
 .summary-header-title { font-size: 14px; font-weight: 700; color: #1e293b; }
-.summary-header-count { font-size: 12px; font-weight: 700; color: #94a3b8; background: #f8fafc; padding: 2px 8px; border-radius: 8px; border: 1px solid #f1f5f9; font-family: monospace; }
+.summary-export-btn { display: flex; align-items: center; justify-content: center; padding: 6px 12px; background: #f8fafc; border: 1px solid #dbe4ee; border-radius: 12px; font-size: 11px; font-weight: 700; color: #334155; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
 .summary-item { padding: 11px 6px; border-radius: 14px; text-align: center; display: flex; flex-direction: column; gap: 3px; box-shadow: 0 4px 14px rgba(15,23,42,0.03); }
@@ -316,8 +509,10 @@ const navigateToOrderList = (date) => {
 .month-header-info { flex: 1; }
 .month-header-title { font-size: 14px; font-weight: 800; color: #1e293b; display: block; }
 .month-header-count { font-size: 11px; font-weight: 400; background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 999px; font-family: monospace; margin-left: 6px; }
-.month-header-stats { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
-.month-header-stat { font-size: 12px; color: #64748b; }
+.month-header-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin-top: 8px; }
+.month-header-stat { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; font-size: 12px; color: #64748b; }
+.month-header-stat-label { flex-shrink: 0; color: #64748b; }
+.month-header-stat-value { min-width: 0; white-space: nowrap; text-align: right; }
 .stat-bold { font-weight: 700; color: #1e293b; }
 .text-receivable { color: #dc2626; }
 .text-emerald { color: #059669; }
@@ -337,6 +532,14 @@ const navigateToOrderList = (date) => {
 .day-stat-value { font-size: 14px; font-weight: 900; color: #1e293b; font-family: monospace; }
 .day-stat-value.text-receivable { color: #dc2626; }
 .day-stat-unit { font-size: 11px; font-weight: 400; color: #94a3b8; }
+
+.export-modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,.42); z-index: 120; display: flex; align-items: flex-start; justify-content: center; padding: 20px 20px 24px; box-sizing: border-box; }
+.export-modal { width: 100%; max-width: 420px; background: #fff; border-radius: 20px; padding: 18px 16px 16px; border: 1px solid rgba(226,232,240,.9); box-shadow: 0 24px 60px rgba(15,23,42,.24); box-sizing: border-box; }
+.export-modal-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; margin-bottom: 12px; }
+.export-modal-title { font-size: 15px; font-weight: 800; color: #1e293b; }
+.export-modal-close { font-size: 12px; font-weight: 700; color: #059669; background: #ecfdf5; padding: 6px 12px; border-radius: 10px; }
+.export-option-list { display: flex; flex-direction: column; gap: 8px; }
+.export-option-item { padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 13px; font-weight: 700; color: #334155; }
 
 .safe-bottom { height: 32px; }
 </style>

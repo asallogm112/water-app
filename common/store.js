@@ -5,6 +5,7 @@
 import {
 	reactive
 } from 'vue'
+import { formatMoney } from './utils.js'
 
 const SESSION_STORAGE_KEY = 'delivery_session_admin'
 
@@ -18,10 +19,6 @@ function unwrapServiceResult(rawResult) {
 	return rawResult
 }
 
-function normalizeUsername(value) {
-	return String(value || '').trim().toLowerCase()
-}
-
 function buildOrderDuplicateKey(order) {
 	return [
 		order.createdDate || '',
@@ -33,7 +30,16 @@ function buildOrderDuplicateKey(order) {
 
 function getService() {
 	if (!waterService) {
+		if (typeof uniCloud === 'undefined' || !uniCloud || typeof uniCloud.importObject !== 'function') {
+			throw new Error('当前环境未启用 uniCloud，无法连接云对象 waterService')
+		}
 		waterService = uniCloud.importObject('waterService')
+		if (!waterService || typeof waterService !== 'object') {
+			throw new Error('云对象 waterService 不存在或未成功导入，请检查 uniCloud 云对象是否已上传')
+		}
+		if (typeof waterService.login !== 'function') {
+			throw new Error('云对象 waterService 缺少 login 方法，请重新上传最新云对象代码')
+		}
 	}
 	return waterService
 }
@@ -75,6 +81,29 @@ function applyBootstrapData(payload = {}) {
 	if (Array.isArray(payload.orders)) state.orders = clonePlainData(payload.orders, [])
 }
 
+function persistSessionState() {
+	const currentUser = clonePlainData(state.currentUser, null)
+	if (!currentUser?._id) return
+	uni.setStorageSync(SESSION_STORAGE_KEY, JSON.stringify({
+		_id: currentUser._id,
+		user: currentUser,
+		users: clonePlainData(state.users, []),
+		orders: clonePlainData(state.orders, []),
+		updatedAt: Date.now()
+	}))
+}
+
+function readSessionState() {
+	try {
+		const raw = uni.getStorageSync(SESSION_STORAGE_KEY)
+		if (!raw) return null
+		const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+		return parsed && typeof parsed === 'object' ? parsed : null
+	} catch (error) {
+		return null
+	}
+}
+
 const state = reactive({
 	currentUser: null,
 	users: [],
@@ -97,6 +126,22 @@ function formatDateTime(date) {
 	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
+function formatBeijingDateTime(date = new Date()) {
+	const formatter = new Intl.DateTimeFormat('zh-CN', {
+		timeZone: 'Asia/Shanghai',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false
+	})
+	const parts = formatter.formatToParts(date)
+	const get = (type) => parts.find(part => part.type === type)?.value || '00'
+	return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`
+}
+
 function formatDate(date) {
 	const pad = (n) => String(n).padStart(2, '0')
 	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -104,14 +149,9 @@ function formatDate(date) {
 
 function getSessionUserId() {
 	if (state.currentUser && state.currentUser._id) return state.currentUser._id
-	try {
-		const raw = uni.getStorageSync(SESSION_STORAGE_KEY)
-		if (!raw) return ''
-		const parsed = JSON.parse(raw)
-		return parsed && parsed._id ? parsed._id : ''
-	} catch (error) {
-		return ''
-	}
+	const parsed = readSessionState()
+	if (!parsed) return ''
+	return parsed._id || parsed.user?._id || ''
 }
 
 function clearSessionState() {
@@ -119,6 +159,59 @@ function clearSessionState() {
 	state.users = []
 	state.orders = []
 	uni.removeStorageSync(SESSION_STORAGE_KEY)
+}
+
+async function fetchOrderList() {
+	const result = unwrapServiceResult(await getService().getOrderList({
+		sessionUserId: getSessionUserId()
+	}))
+	if (!result?.success) {
+		return {
+			success: false,
+			message: formatErrorMessage(result?.message, '加载订单失败'),
+			orders: []
+		}
+	}
+	return {
+		success: true,
+		orders: clonePlainData(result.orders, [])
+	}
+}
+
+async function getOrderMergeStatusList() {
+	const result = unwrapServiceResult(await getService().getOrderMergeStatusList({
+		sessionUserId: getSessionUserId()
+	}))
+	if (!result?.success) {
+		return {
+			success: false,
+			message: formatErrorMessage(result?.message, '加载合并状态失败'),
+			statuses: []
+		}
+	}
+	return {
+		success: true,
+		statuses: clonePlainData(result.statuses, [])
+	}
+}
+
+async function setOrderMergeStatus(date, isMerged) {
+	const result = unwrapServiceResult(await getService().setOrderMergeStatus({
+		sessionUserId: getSessionUserId(),
+		date,
+		isMerged: !!isMerged
+	}))
+	if (!result?.success) {
+		return {
+			success: false,
+			message: formatErrorMessage(result?.message, '保存合并状态失败')
+		}
+	}
+	return {
+		success: true,
+		date: result.date,
+		isMerged: !!result.isMerged
+	}
 }
 
 async function loadAllData() {
@@ -133,17 +226,26 @@ async function loadAllData() {
 	}
 	state.loading = true
 	try {
-		const result = unwrapServiceResult(await getService().getBootstrapData({
+		const userListResult = unwrapServiceResult(await getService().getUserList({
 			userId
 		}))
-		if (!result?.success) {
+		if (!userListResult?.success) {
 			clearSessionState()
 			return {
 				success: false,
-				message: formatErrorMessage(result?.error || result?.message, '加载数据失败')
+				message: formatErrorMessage(userListResult?.error || userListResult?.message, '加载数据失败')
 			}
 		}
-		applyBootstrapData(result)
+		applyBootstrapData(userListResult)
+		const orderResult = await fetchOrderList()
+		if (!orderResult.success) {
+			return {
+				success: false,
+				message: orderResult.message
+			}
+		}
+		state.orders = orderResult.orders
+		persistSessionState()
 		return {
 			success: true
 		}
@@ -163,12 +265,27 @@ async function loadUsers() {
 }
 
 async function loadOrders() {
-	const result = await loadAllData()
-	return result.success ? state.orders : []
+	const userId = getSessionUserId()
+	if (!userId) {
+		state.orders = []
+		return []
+	}
+	state.loading = true
+	try {
+		const result = await fetchOrderList()
+		if (!result.success) return []
+		state.orders = result.orders
+		persistSessionState()
+		return state.orders
+	} catch (error) {
+		return []
+	} finally {
+		state.loading = false
+	}
 }
 
-async function loginWithPassword(username, password) {
-	if (!username || !password) {
+async function loginWithPassword(userName, password) {
+	if (!userName || !password) {
 		return {
 			success: false,
 			error: '请输入账号和密码'
@@ -176,7 +293,7 @@ async function loginWithPassword(username, password) {
 	}
 	try {
 		const result = unwrapServiceResult(await getService().login({
-			username: username.trim(),
+			userName: userName.trim(),
 			password: password
 		}))
 		if (!result?.success) {
@@ -186,10 +303,16 @@ async function loginWithPassword(username, password) {
 			}
 		}
 		applyBootstrapData(result)
-		uni.setStorageSync(SESSION_STORAGE_KEY, JSON.stringify({
-			_id: state.currentUser?._id || result.user?._id
-		}))
-		showNotification(`欢迎回来，${state.currentUser?.name || result.user?.name || ''}！`)
+		const orderResult = await fetchOrderList()
+		if (!orderResult.success) {
+			return {
+				success: false,
+				error: orderResult.message
+			}
+		}
+		state.orders = orderResult.orders
+		persistSessionState()
+		showNotification(`欢迎回来，${state.currentUser?.userName || result.user?.userName || ''}！`)
 		return {
 			success: true,
 			user: state.currentUser
@@ -209,21 +332,15 @@ function logout() {
 
 async function restoreSession() {
 	if (restoreSessionPromise) return restoreSessionPromise
-	const userId = getSessionUserId()
-	if (!userId) return false
+	const cachedSession = readSessionState()
+	if (!cachedSession?.user?._id) return false
 	restoreSessionPromise = (async () => {
 		try {
-			const result = unwrapServiceResult(await getService().restoreSession({
-				userId
-			}))
-			if (!result?.success) {
-				clearSessionState()
-				return false
-			}
-			applyBootstrapData(result)
-			uni.setStorageSync(SESSION_STORAGE_KEY, JSON.stringify({
-				_id: result.user._id
-			}))
+			applyBootstrapData({
+				user: cachedSession.user || null,
+				users: Array.isArray(cachedSession.users) ? cachedSession.users : [],
+				orders: Array.isArray(cachedSession.orders) ? cachedSession.orders : []
+			})
 			return true
 		} catch (error) {
 			clearSessionState()
@@ -283,7 +400,7 @@ async function addOrder(orderData) {
 			}
 		}
 		await loadOrders()
-		showNotification(`配送单已生成: ¥${orderData.totalAmount}`)
+		showNotification(`配送单已生成: ¥${formatMoney(orderData.totalAmount)}`)
 		return {
 			success: true
 		}
@@ -367,13 +484,66 @@ async function addOrders(orderList) {
 			}
 		}
 		await loadOrders()
-		showNotification(`已批量创建 ${orderList.length} 笔订单`)
+		const addedCount = Number(result.addedCount || result.count || 0)
+		const skippedCount = Number(result.skippedCount || 0)
+		showNotification(skippedCount > 0 ? `已创建 ${addedCount} 笔，跳过 ${skippedCount} 笔重复订单` : `已批量创建 ${addedCount} 笔订单`)
 		return result
 	} catch (error) {
 		showNotification('批量创建失败: ' + formatErrorMessage(error))
 		return {
 			success: false,
 			message: formatErrorMessage(error)
+		}
+	}
+}
+
+async function updateOrder(orderId, orderData) {
+	try {
+		const result = unwrapServiceResult(await getService().updateOrder({
+			sessionUserId: getSessionUserId(),
+			orderId,
+			orderData
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '更新订单失败')
+			}
+		}
+		await loadOrders()
+		showNotification('订单信息已更新')
+		return {
+			success: true
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '更新订单失败')
+		}
+	}
+}
+
+async function deleteOrder(orderId) {
+	try {
+		const result = unwrapServiceResult(await getService().deleteOrder({
+			sessionUserId: getSessionUserId(),
+			orderId
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '删除订单失败')
+			}
+		}
+		await loadOrders()
+		showNotification('订单已删除')
+		return {
+			success: true
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '删除订单失败')
 		}
 	}
 }
@@ -421,9 +591,14 @@ export function useStore() {
 		updateCustomer,
 		deleteCustomer,
 		addOrders,
+		updateOrder,
+		deleteOrder,
+		getOrderMergeStatusList,
+		setOrderMergeStatus,
 		getOrderMedia,
 		showNotification,
 		formatDateTime,
+		formatBeijingDateTime,
 		formatDate
 	}
 }

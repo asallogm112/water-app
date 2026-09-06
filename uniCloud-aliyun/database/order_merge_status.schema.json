@@ -1,0 +1,42 @@
+{
+  "bsonType": "object",
+  "required": ["date", "isMerged"],
+  "permission": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "记录ID，系统自动生成"
+    },
+    "date": {
+      "bsonType": "string",
+      "title": "账单日期",
+      "description": "格式: YYYY-MM-DD",
+      "trim": "both"
+    },
+    "createdDate": {
+      "bsonType": "string",
+      "title": "业务日期",
+      "description": "格式: YYYY-MM-DD"
+    },
+    "isMerged": {
+      "bsonType": "bool",
+      "title": "是否已合并",
+      "description": "当前日期的手工单是否已完成合并"
+    },
+    "updatedAt": {
+      "bsonType": "string",
+      "title": "更新时间",
+      "description": "格式: YYYY-MM-DD HH:mm:ss"
+    },
+    "updatedBy": {
+      "bsonType": "string",
+      "title": "更新人",
+      "description": "最后一次更新该状态的管理员账号",
+      "trim": "both"
+    }
+  }
+}

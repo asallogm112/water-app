@@ -1,6 +1,6 @@
 {
   "bsonType": "object",
-  "required": ["username", "name", "password"],
+  "required": ["userName", "password"],
   "permission": {
     "read": false,
     "create": false,
@@ -11,15 +11,9 @@
     "_id": {
       "description": "记录ID，系统自动生成"
     },
-    "username": {
+    "userName": {
       "bsonType": "string",
-      "title": "登录账号",
-      "description": "用户登录账号，唯一",
-      "trim": "both"
-    },
-    "name": {
-      "bsonType": "string",
-      "title": "姓名",
+      "title": "客户名称",
       "description": "客户姓名/店铺名称",
       "trim": "both"
     },

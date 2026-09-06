@@ -28,13 +28,13 @@
 				<view class="login-form" v-if="!loggingIn">
 					<view class="form-group">
 						<text class="form-label">账号</text>
-						<uni-easyinput type="" v-model="username" placeholder="输入登录账号" :inputBorder="false"
-							class="login-input" style="background-color: #eee;" />
+						<uni-easyinput class="login-input" type="text" v-model="userName"
+							placeholder="输入登录账号" :inputBorder="false" />
 					</view>
 					<view class="form-group">
 						<text class="form-label">密码</text>
-						<uni-easyinput v-model="password" type="password" placeholder="输入登录密码" :inputBorder="false"
-							class="login-input" style="background-color: #eee;" />
+						<uni-easyinput class="login-input" type="password" v-model="password"
+							placeholder="输入登录密码" :inputBorder="false" />
 					</view>
 					<button class="btn-login-submit" @tap="handlePasswordLogin">立即登录</button>
 				</view>
@@ -47,6 +47,8 @@
 	import {
 		useStore
 	} from '../../common/store.js'
+
+	const SAVED_USERNAME_KEY = 'saved_username'
 
 	export default {
 		setup() {
@@ -63,21 +65,47 @@
 		},
 		data() {
 			return {
-				username: '',
+				userName: '',
 				password: '',
 				error: '',
-				loggingIn: false
+				loggingIn: false,
+				checkingSession: false
 			}
+		},
+		onLoad() {
+			// 填充上次记住的账号
+			try {
+				const saved = uni.getStorageSync(SAVED_USERNAME_KEY)
+				if (saved) this.userName = saved
+			} catch (e) {}
+			// 已有登录会话则自动进入首页，无需重新登录
+			this.checkingSession = true
+			this.restoreSession().then((hasSession) => {
+				if (hasSession) {
+					uni.reLaunch({
+						url: '/pages/home/home'
+					})
+				}
+			}).catch(() => {}).finally(() => {
+				this.checkingSession = false
+			})
 		},
 		methods: {
 			async handlePasswordLogin() {
 				this.error = '';
+				uni.hideKeyboard()
 				this.loggingIn = true
 				try {
-					const result = await this.loginWithPassword(this.username, this.password)
-					if (result.success) uni.reLaunch({
-						url: '/pages/home/home'
-					})
+					const result = await this.loginWithPassword(this.userName, this.password)
+					if (result.success) {
+						// 记住账号，下次自动填充
+						uni.setStorageSync(SAVED_USERNAME_KEY, String(this.userName || '').trim())
+						this.password = ''
+						uni.hideKeyboard()
+						uni.reLaunch({
+							url: '/pages/home/home'
+						})
+					}
 					else this.error = result.error
 				} catch (e) {
 					this.error = e && (e.message || e.errMsg) ? String(e.message || e.errMsg) : '登录失败，请稍后重试'
@@ -257,29 +285,25 @@
 		padding-left: 2px;
 	}
 
+	.login-input {
+		width: 100%;
+	}
+
 	.login-input .uni-easyinput__content {
-		border: 1px solid #dbe4ee !important;
+		border: 1px solid #dbe4ee;
 		border-radius: 14px;
 		background: #eee;
-		min-height: 46px;
-		padding: 0 14px;
 		box-shadow: inset 0 1px 0 rgba(255, 255, 255, .65);
 	}
 
-	.login-input .uni-easyinput__content.is-focused {
-		border-color: #10b981 !important;
-		background: #eee;
-		box-shadow: 0 0 0 3px rgba(16, 185, 129, .10);
-	}
-
 	.login-input .uni-easyinput__content-input {
-		height: 46px;
+		height: 44px;
 		font-size: 16px;
 		color: #0f172a;
-		background: transparent;
+		caret-color: #0f766e;
 	}
 
-	.login-input .uni-easyinput__placeholder-class {
+	.login-input-placeholder {
 		color: #a3b2c2;
 	}
 

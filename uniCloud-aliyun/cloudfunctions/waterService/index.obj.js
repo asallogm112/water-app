@@ -1,16 +1,59 @@
 const CUSTOMER_COLLECTION = 'user_list'
 const ORDER_COLLECTION = 'order_list'
 const ADMIN_COLLECTION = 'admin_list'
+const ORDER_MERGE_COLLECTION = 'order_merge_status'
+const DB_PAGE_SIZE = 500
+
 function normalizeText(value) {
 	return typeof value === 'string' ? value.trim() : ''
 }
 
-function normalizeUsername(value) {
-	return normalizeText(value).toLowerCase()
+function formatDateTime(date = new Date()) {
+	const pad = (n) => String(n).padStart(2, '0')
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+function getCustomerUserName(user) {
+	return normalizeText(user && (user.userName || user.username || user.name))
+}
+
+function getOrderUserName(order) {
+	return normalizeText(order && (order.userName || order.username))
+}
+
+function normalizeOrderDate(value) {
+	const text = normalizeText(value)
+	if (!text) return ''
+	const match = text.match(/(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/)
+	if (match) {
+		const [, year, month, day] = match
+		return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+	}
+	const shortMatch = text.match(/^(\d{4}-\d{2}-\d{2})/)
+	return shortMatch ? shortMatch[1] : text.slice(0, 10)
+}
+
+function getOrderCreatedDate(order) {
+	const createdDate = normalizeOrderDate(order && order.createdDate)
+	if (createdDate) return createdDate
+	return normalizeOrderDate(order && order.createdAt)
 }
 
 function isValidDateString(value) {
 	return /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function sanitizeMergeStatusRecord(record) {
+	if (!record) return null
+	const date = normalizeOrderDate(record.date || record.createdDate)
+	if (!isValidDateString(date)) return null
+	return {
+		_id: record._id,
+		date,
+		isMerged: !!record.isMerged,
+		updatedAt: normalizeText(record.updatedAt),
+		updatedBy: normalizeText(record.updatedBy)
+	}
 }
 
 function isValidSettlementType(value) {
@@ -23,7 +66,10 @@ function sanitizeUser(user) {
 		password,
 		...rest
 	} = user
-	return rest
+ 	return {
+		...rest,
+		userName: getCustomerUserName(user)
+	}
 }
 
 function sanitizeOrderForList(order) {
@@ -35,6 +81,9 @@ function sanitizeOrderForList(order) {
 	const dedupKey = normalizeText(order.dedup_key) || buildOrderDedupKey(order)
 	return {
 		...order,
+		createdDate: getOrderCreatedDate(order),
+		userName: getOrderUserName(order),
+		unitPrice: Number.isFinite(Number(order.unitPrice)) && Number(order.unitPrice) >= 0 ? Number(order.unitPrice) : 0,
 		dedup_key: dedupKey,
 		logs: [],
 		logCount,
@@ -44,27 +93,22 @@ function sanitizeOrderForList(order) {
 }
 
 function buildOrderDedupKey(order) {
-	const date = normalizeText(order && order.createdDate)
-	const monthKey = date ? date.substring(0, 7).replace('-', '') : ''
+	const date = getOrderCreatedDate(order)
+	const userName = getOrderUserName(order)
 	const quantity = Number(order && order.quantity) || 0
 	const returnedBuckets = Number(order && order.returnedBuckets) || 0
-	return [monthKey, quantity, returnedBuckets].join('-')
+	return `${userName}+${date}/${quantity}-${returnedBuckets}`
 }
 
 function validateCustomerPayload(userData, {
 	requirePassword = false
 } = {}) {
-	const username = normalizeText(userData.username)
-	const name = normalizeText(userData.name)
+	const userName = normalizeText(userData.userName)
 	const password = userData.password === undefined ? '' : String(userData.password)
 	const unitPrice = Number(userData.unitPrice)
 	const settlementType = userData.settlementType || 'daily'
 
-	if (!username) return {
-		valid: false,
-		message: '客户账号不能为空'
-	}
-	if (!name) return {
+	if (!userName) return {
 		valid: false,
 		message: '客户名称不能为空'
 	}
@@ -84,8 +128,7 @@ function validateCustomerPayload(userData, {
 	return {
 		valid: true,
 		payload: {
-			username,
-			name,
+			userName,
 			phone: userData.phone === undefined ? '' : String(userData.phone).trim(),
 			address: userData.address === undefined ? '' : String(userData.address).trim(),
 			unitPrice,
@@ -103,11 +146,11 @@ function validateOrderPayload(orderData) {
 	const operator = normalizeText(orderData.operator)
 	const quantity = Number(orderData.quantity)
 	const returnedBuckets = Number(orderData.returnedBuckets)
-	const unitPrice = Number(orderData.unitPrice)
+	const unitPrice = orderData.unitPrice === undefined ? 0 : Number(orderData.unitPrice)
 	const totalAmount = Number(orderData.totalAmount)
 	const actualAmountReceived = orderData.actualAmountReceived !== undefined ?
 		Number(orderData.actualAmountReceived) :
-		totalAmount
+		0
 	const settlementType = orderData.settlementType || 'daily'
 
 	if (!userName) return {
@@ -122,9 +165,9 @@ function validateOrderPayload(orderData) {
 		valid: false,
 		message: '订单时间不能为空'
 	}
-	if (!Number.isInteger(quantity) || quantity <= 0) return {
+	if (!Number.isInteger(quantity) || quantity < 0) return {
 		valid: false,
-		message: '送水数量必须是大于 0 的整数'
+		message: '送水数量允许为 0，但不能小于 0'
 	}
 	if (!Number.isInteger(returnedBuckets) || returnedBuckets < 0) return {
 		valid: false,
@@ -160,6 +203,7 @@ function validateOrderPayload(orderData) {
 			totalAmount,
 			actualAmountReceived,
 			dedup_key: buildOrderDedupKey({
+				userName,
 				createdDate,
 				quantity,
 				returnedBuckets
@@ -189,31 +233,40 @@ function toLogSafe(value) {
 function buildCustomerNameMap(users) {
 	const map = new Map()
 	users.forEach(user => {
-		const key = normalizeText(user && user.name).toLowerCase()
+		const key = getCustomerUserName(user).toLowerCase()
 		if (!key) return
 		map.set(key, user)
 	})
 	return map
 }
 
+function getPayloadEffectiveUnitPrice(payload, customerMap) {
+	const orderUnitPrice = Number(payload && payload.unitPrice)
+	if (Number.isFinite(orderUnitPrice) && orderUnitPrice > 0) return orderUnitPrice
+	const key = normalizeText(payload && payload.userName).toLowerCase()
+	if (!key || !customerMap.has(key)) return 0
+	const customer = customerMap.get(key)
+	const customerUnitPrice = Number(customer.unitPrice)
+	return Number.isFinite(customerUnitPrice) && customerUnitPrice >= 0 ? customerUnitPrice : 0
+}
+
 function applyCustomerPricing(payload, customerMap) {
 	const key = normalizeText(payload && payload.userName).toLowerCase()
-	if (!key || !customerMap.has(key)) return payload
-	const customer = customerMap.get(key)
-	const unitPrice = Number(customer.unitPrice)
-	if (!Number.isFinite(unitPrice) || unitPrice < 0) return payload
-	const totalAmount = Number((Number(payload.quantity || 0) * unitPrice).toFixed(2))
+	const customer = key && customerMap.has(key) ? customerMap.get(key) : null
+	const effectiveUnitPrice = getPayloadEffectiveUnitPrice(payload, customerMap)
+	const totalAmount = Number((Number(payload.quantity || 0) * effectiveUnitPrice).toFixed(2))
 	return {
 		...payload,
-		unitPrice,
+		unitPrice: Number(Number(payload.unitPrice) > 0 ? Number(payload.unitPrice).toFixed(2) : 0),
 		totalAmount,
 		dedup_key: buildOrderDedupKey({
+			userName: payload.userName,
 			createdDate: payload.createdDate,
 			quantity: payload.quantity,
 			returnedBuckets: payload.returnedBuckets
 		}),
 		actualAmountReceived: payload.actualAmountReceived,
-		settlementType: isValidSettlementType(customer.settlementType) ? customer.settlementType : payload.settlementType
+		settlementType: customer && isValidSettlementType(customer.settlementType) ? customer.settlementType : payload.settlementType
 	}
 }
 
@@ -221,6 +274,20 @@ function getDbData(res) {
 	if (Array.isArray(res?.data)) return res.data
 	if (Array.isArray(res?.result?.data)) return res.result.data
 	return []
+}
+
+async function fetchAllCollectionData(buildQuery) {
+	const allData = []
+	let offset = 0
+	while (true) {
+		const res = await buildQuery().skip(offset).limit(DB_PAGE_SIZE).get()
+		const pageData = getDbData(res)
+		if (!pageData.length) break
+		allData.push(...pageData)
+		if (pageData.length < DB_PAGE_SIZE) break
+		offset += pageData.length
+	}
+	return allData
 }
 
 async function requireAdmin(db, sessionUserId) {
@@ -232,7 +299,7 @@ async function requireAdmin(db, sessionUserId) {
 	let data = getDbData(res)
 	if (!data.length) {
 		const fallbackRes = await db.collection(ADMIN_COLLECTION).where({
-			username: adminId
+			userName: adminId
 		}).get()
 		data = getDbData(fallbackRes)
 	}
@@ -246,18 +313,18 @@ async function requireAdmin(db, sessionUserId) {
 }
 
 async function loadUsers(db) {
-	const res = await db.collection(CUSTOMER_COLLECTION).get()
-	const data = getDbData(res)
+	const data = await fetchAllCollectionData(() => db.collection(CUSTOMER_COLLECTION))
 	return data.map(sanitizeUser)
 }
 
 async function loadOrders(db) {
-	const res = await db.collection(ORDER_COLLECTION)
+	const data = await fetchAllCollectionData(() => db.collection(ORDER_COLLECTION)
 		.field({
 			_id: true,
 			createdAt: true,
 			createdDate: true,
 			userName: true,
+			username: true,
 			quantity: true,
 			returnedBuckets: true,
 			operator: true,
@@ -270,34 +337,67 @@ async function loadOrders(db) {
 			logCount: true,
 			hasPaymentScreenshot: true
 		})
-		.orderBy('createdAt', 'desc')
-		.get()
-	const data = getDbData(res)
+		.orderBy('createdAt', 'desc'))
 	return data.map(sanitizeOrderForList)
 }
 
 async function loadOrderDuplicateKeys(db) {
-	const res = await db.collection(ORDER_COLLECTION)
+	const data = await fetchAllCollectionData(() => db.collection(ORDER_COLLECTION)
 		.field({
 			dedup_key: true,
 			createdDate: true,
+			userName: true,
+			username: true,
 			quantity: true,
 			returnedBuckets: true
-		})
-		.get()
-	const data = getDbData(res)
+		}))
 	return data.map(buildDuplicateKey)
 }
 
-module.exports = {
+async function loadOrderMergeStatuses(db) {
+	const data = await fetchAllCollectionData(() => db.collection(ORDER_MERGE_COLLECTION)
+		.field({
+			_id: true,
+			date: true,
+			createdDate: true,
+			isMerged: true,
+			updatedAt: true,
+			updatedBy: true
+		})
+		.orderBy('date', 'desc'))
+	return data.map(sanitizeMergeStatusRecord).filter(Boolean)
+}
+
+function wrapServiceMethods(service) {
+	return Object.fromEntries(Object.entries(service).map(([name, handler]) => {
+		if (typeof handler !== 'function' || name === '_before') {
+			return [name, handler]
+		}
+		return [name, async function(...args) {
+			try {
+				const result = await handler.apply(this, args)
+				console.log(`[waterService.${name}] return:`, toLogSafe(result))
+				return result
+			} catch (error) {
+				console.log(`[waterService.${name}] throw:`, toLogSafe({
+					message: error?.message || String(error),
+					stack: error?.stack || ''
+				}))
+				throw error
+			}
+		}]
+	}))
+}
+
+const serviceHandlers = {
 	_before: function() {
 		this.db = uniCloud.database()
 	},
 	async login({
-		username,
+		userName,
 		password
 	} = {}) {
-		const account = normalizeText(username)
+		const account = normalizeText(userName)
 		const plainPassword = normalizeText(password === undefined ? '' : String(password))
 
 		if (!account || !plainPassword) {
@@ -307,12 +407,13 @@ module.exports = {
 			}
 		}
 		const db = this.db || uniCloud.database()
-		const res = await db.collection(ADMIN_COLLECTION).where({
-			username: account,
-			password: plainPassword
-		}).get()
+		const res = await db.collection(ADMIN_COLLECTION).get()
 		const data = getDbData(res)
-		const matchedAdmin = data[0]
+		const matchedAdmin = data.find(admin => {
+			const accountName = normalizeText(admin?.userName || admin?.username)
+			const adminPassword = normalizeText(admin?.password === undefined ? '' : String(admin.password))
+			return accountName === account && adminPassword === plainPassword
+		})
 		if (!matchedAdmin) {
 			return {
 				success: false,
@@ -323,12 +424,11 @@ module.exports = {
 			...sanitizeUser(matchedAdmin),
 			isAdmin: true
 		}
-		const [users, orders] = await Promise.all([loadUsers(db), loadOrders(db)])
+		const users = await loadUsers(db)
 		return {
 			success: true,
 			user: currentUser,
-			users,
-			orders
+			users
 		}
 	},
 	async restoreSession({
@@ -337,12 +437,11 @@ module.exports = {
 		try {
 			const db = this.db || uniCloud.database()
 			const currentUser = await requireAdmin(db, userId)
-			const [users, orders] = await Promise.all([loadUsers(db), loadOrders(db)])
+			const users = await loadUsers(db)
 			return {
 				success: true,
 				user: currentUser,
-				users,
-				orders
+				users
 			}
 		} catch (error) {
 			return {
@@ -351,16 +450,107 @@ module.exports = {
 			}
 		}
 	},
-	async getBootstrapData({
+	async getUserList({
 		userId
 	} = {}) {
 		const db = this.db || uniCloud.database()
 		await requireAdmin(db, userId)
-		const [users, orders] = await Promise.all([loadUsers(db), loadOrders(db)])
+		const users = await loadUsers(db)
 		return {
 			success: true,
-			users,
-			orders
+			users
+		}
+	},
+	async getOrderList({
+		sessionUserId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const orders = await loadOrders(db)
+			const dateSummary = orders.reduce((map, order) => {
+				const key = normalizeText(order?.createdDate) || 'EMPTY_DATE'
+				map[key] = (map[key] || 0) + 1
+				return map
+			}, {})
+			console.log('[waterService.getOrderList] date summary:', toLogSafe({
+				total: orders.length,
+				dateSummary
+			}))
+			return {
+				success: true,
+				orders
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '获取订单列表失败'
+			}
+		}
+	},
+	async getOrderMergeStatusList({
+		sessionUserId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const statuses = await loadOrderMergeStatuses(db)
+			return {
+				success: true,
+				statuses
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '加载合并状态失败'
+			}
+		}
+	},
+	async setOrderMergeStatus({
+		sessionUserId,
+		date,
+		isMerged
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			const currentUser = await requireAdmin(db, sessionUserId)
+			const targetDate = normalizeOrderDate(date)
+			if (!isValidDateString(targetDate)) {
+				return {
+					success: false,
+					message: '日期参数不正确'
+				}
+			}
+			const recordRes = await db.collection(ORDER_MERGE_COLLECTION).where({
+				date: targetDate
+			}).get()
+			const recordData = getDbData(recordRes)
+			if (isMerged) {
+				const payload = {
+					date: targetDate,
+					createdDate: targetDate,
+					isMerged: true,
+					updatedAt: formatDateTime(new Date()),
+					updatedBy: currentUser.userName || ''
+				}
+				if (recordData.length > 0) {
+					await db.collection(ORDER_MERGE_COLLECTION).doc(recordData[0]._id).update(payload)
+				} else {
+					await db.collection(ORDER_MERGE_COLLECTION).add(payload)
+				}
+			} else if (recordData.length > 0) {
+				await db.collection(ORDER_MERGE_COLLECTION).doc(recordData[0]._id).remove()
+			}
+			return {
+				success: true,
+				date: targetDate,
+				isMerged: !!isMerged
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '保存合并状态失败'
+			}
 		}
 	},
 	async getOrderMedia({
@@ -375,9 +565,9 @@ module.exports = {
 				return {
 					success: false,
 					message: '订单参数不正确'
+				}
 			}
-		}
-		const res = await db.collection(ORDER_COLLECTION).doc(targetOrderId).get()
+			const res = await db.collection(ORDER_COLLECTION).doc(targetOrderId).get()
 			const data = getDbData(res)
 			if (!data.length) {
 				return {
@@ -426,9 +616,13 @@ module.exports = {
 					}
 				}
 				const payloadData = validation.payload
-				if (currentUsers.some(user => normalizeUsername(user.username) === normalizeUsername(payloadData.username) ||
-						normalizeText(user.name) === normalizeText(payloadData.name))) {
-					duplicateUsers.push(payloadData.name)
+				if (currentUsers.some(user => normalizeText(user.userName) === normalizeText(payloadData
+						.userName))) {
+					duplicateUsers.push({
+						userName: payloadData.userName,
+						unitPrice: payloadData.unitPrice,
+						settlementType: payloadData.settlementType
+					})
 					continue
 				}
 				const now = new Date()
@@ -493,14 +687,12 @@ module.exports = {
 				}
 			}
 			const currentUsers = await loadUsers(db)
-			const hasDuplicate = currentUsers.some(user => user._id !== targetUserId && (
-				normalizeUsername(user.username) === normalizeUsername(payloadData.username) ||
-				normalizeText(user.name) === normalizeText(payloadData.name)
-			))
+			const hasDuplicate = currentUsers.some(user => user._id !== targetUserId && normalizeText(user
+				.userName) === normalizeText(payloadData.userName))
 			if (hasDuplicate) {
 				return {
 					success: false,
-					message: '客户名称或账号已存在'
+					message: '客户名称已存在'
 				}
 			}
 			await db.collection(CUSTOMER_COLLECTION).doc(targetUserId).update({
@@ -567,7 +759,9 @@ module.exports = {
 			}
 			const customerMap = buildCustomerNameMap(await loadUsers(db))
 			const payload = applyCustomerPricing(validation.payload, customerMap)
-			const duplicateWhere = { dedup_key: payload.dedup_key }
+			const duplicateWhere = {
+				dedup_key: payload.dedup_key
+			}
 			const existRes = await db.collection(ORDER_COLLECTION).where(duplicateWhere).get()
 			const exists = getDbData(existRes)
 			if (exists.length > 0) {
@@ -616,28 +810,38 @@ module.exports = {
 				}
 				const payload = applyCustomerPricing(validation.payload, customerMap)
 				const key = buildDuplicateKey(payload)
-				if (seenKeys.has(key)) duplicateOrders.push(payload)
+				if (seenKeys.has(key)) {
+					duplicateOrders.push(payload)
+					continue
+				}
 				seenKeys.add(key)
 				validPayloads.push(payload)
 			}
 			const dbDuplicateKeySet = new Set(await loadOrderDuplicateKeys(db))
+			const insertPayloads = []
 			validPayloads.forEach(payload => {
 				if (dbDuplicateKeySet.has(buildDuplicateKey(payload))) duplicateOrders.push(payload)
+				else insertPayloads.push(payload)
 			})
-			if (duplicateOrders.length > 0) {
+			if (insertPayloads.length === 0) {
 				return {
 					success: false,
 					code: 'DUPLICATE_ORDER',
 					message: '这个数据重复录入了',
-					duplicateOrders
+					duplicateOrders,
+					addedCount: 0,
+					skippedCount: duplicateOrders.length
 				}
 			}
-			for (const payload of validPayloads) {
+			for (const payload of insertPayloads) {
 				await db.collection(ORDER_COLLECTION).add(payload)
 			}
 			return {
 				success: true,
-				count: validPayloads.length
+				count: insertPayloads.length,
+				addedCount: insertPayloads.length,
+				skippedCount: duplicateOrders.length,
+				duplicateOrders
 			}
 		} catch (error) {
 			return {
@@ -645,5 +849,120 @@ module.exports = {
 				message: error.message || '批量创建订单失败'
 			}
 		}
+	},
+	async updateOrder({
+		sessionUserId,
+		orderId,
+		orderData
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const targetOrderId = normalizeText(orderId)
+			if (!targetOrderId) {
+				return {
+					success: false,
+					message: '订单参数不正确'
+				}
+			}
+			const targetRes = await db.collection(ORDER_COLLECTION).doc(targetOrderId).get()
+			const targetOrders = getDbData(targetRes)
+			const targetOrder = targetOrders[0]
+			if (!targetOrder) {
+				return {
+					success: false,
+					message: '订单不存在'
+				}
+			}
+			const validation = validateOrderPayload({
+				...targetOrder,
+				...(orderData || {}),
+				createdAt: targetOrder.createdAt,
+				createdDate: targetOrder.createdDate,
+				operator: targetOrder.operator || ''
+			})
+			if (!validation.valid) {
+				return {
+					success: false,
+					message: validation.message
+				}
+			}
+			const customerMap = buildCustomerNameMap(await loadUsers(db))
+			const payload = applyCustomerPricing(validation.payload, customerMap)
+			const duplicateRes = await db.collection(ORDER_COLLECTION).where({
+				dedup_key: payload.dedup_key
+			}).get()
+			const duplicateData = getDbData(duplicateRes)
+			if (duplicateData.some(item => String(item._id || '') !== targetOrderId)) {
+				return {
+					success: false,
+					message: '这个数据重复录入了'
+				}
+			}
+			await db.collection(ORDER_COLLECTION).doc(targetOrderId).update({
+				userName: payload.userName,
+				quantity: payload.quantity,
+				returnedBuckets: payload.returnedBuckets,
+				unitPrice: payload.unitPrice,
+				totalAmount: payload.totalAmount,
+				actualAmountReceived: payload.actualAmountReceived,
+				settlementType: payload.settlementType,
+				notes: payload.notes,
+				dedup_key: payload.dedup_key
+			})
+			return {
+				success: true
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '更新订单失败'
+			}
+		}
+	},
+	async deleteOrder({
+		sessionUserId,
+		orderId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const targetOrderId = normalizeText(orderId)
+			if (!targetOrderId) {
+				return {
+					success: false,
+					message: '订单参数不正确'
+				}
+			}
+			const targetRes = await db.collection(ORDER_COLLECTION).doc(targetOrderId).get()
+			const targetOrders = getDbData(targetRes)
+			const targetOrder = targetOrders[0]
+			if (!targetOrder) {
+				return {
+					success: false,
+					message: '订单不存在'
+				}
+			}
+			await db.collection(ORDER_COLLECTION).doc(targetOrderId).remove()
+			return {
+				success: true
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '删除订单失败'
+			}
+		}
+	},
+	async test() {
+
+		const db = uniCloud.database();
+		const cmd = db.command;
+		const res = await db.collection("user_list").where({
+			_id: cmd.neq(null)
+		}).get()
+		console.log('res: ', res);
 	}
 }
+
+module.exports = wrapServiceMethods(serviceHandlers)

@@ -73,6 +73,13 @@
         "navigationBarTitleText": "按人月对账",
         "enablePullDownRefresh": false
       }
+    },
+    {
+      "path": "pages/misc-records/misc-records",
+      "style": {
+        "navigationBarTitleText": "工资报销",
+        "enablePullDownRefresh": false
+      }
     }
   ],
   "globalStyle": {

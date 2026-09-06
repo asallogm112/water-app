@@ -27,10 +27,21 @@ export function formatDate(date) {
   return `${y}-${m}-${d}`
 }
 
+export function roundMoney(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return 0
+  return Number(amount.toFixed(2))
+}
+
+export function formatMoney(value) {
+  const amount = roundMoney(value)
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
+}
+
 export function createUserUnitPriceMap(users = []) {
   const map = new Map()
   users.filter(user => user && !user.isAdmin).forEach(user => {
-    const key = String(user.name || '').trim()
+    const key = String(user.userName || '').trim()
     const price = Number(user.unitPrice)
     if (!key || !Number.isFinite(price) || price < 0) return
     map.set(key, price)
@@ -38,25 +49,48 @@ export function createUserUnitPriceMap(users = []) {
   return map
 }
 
+const DEFAULT_UNKNOWN_USER_UNIT_PRICE = 2.2
+
+function getUnknownUserResolvedUnitPrice(order) {
+  const quantity = Number(order?.quantity || 0)
+  const actual = getOrderActualReceivedAmount(order)
+  if (quantity > 0 && actual > 0) return roundMoney(actual / quantity)
+  return roundMoney(DEFAULT_UNKNOWN_USER_UNIT_PRICE)
+}
+
 export function getOrderUnitPrice(order, usersOrMap = []) {
   const unitPriceMap = usersOrMap instanceof Map ? usersOrMap : createUserUnitPriceMap(usersOrMap)
+  const orderUnitPrice = Number(order?.unitPrice)
+  if (Number.isFinite(orderUnitPrice) && orderUnitPrice > 0) return roundMoney(orderUnitPrice)
   const userName = String(order?.userName || '').trim()
   const mappedPrice = unitPriceMap.get(userName)
-  if (Number.isFinite(mappedPrice) && mappedPrice >= 0) return mappedPrice
-  const fallbackPrice = Number(order?.unitPrice)
-  return Number.isFinite(fallbackPrice) && fallbackPrice >= 0 ? fallbackPrice : 0
+  if (Number.isFinite(mappedPrice) && mappedPrice >= 0) return roundMoney(mappedPrice)
+  return getUnknownUserResolvedUnitPrice(order)
 }
 
 export function getOrderReceivableAmount(order, usersOrMap = []) {
+  const userName = String(order?.userName || '').trim()
+  if (userName === '散户') {
+    return getOrderActualReceivedAmount(order)
+  }
+  const unitPriceMap = usersOrMap instanceof Map ? usersOrMap : createUserUnitPriceMap(usersOrMap)
   const quantity = Number(order?.quantity || 0)
-  const unitPrice = getOrderUnitPrice(order, usersOrMap)
+  const orderUnitPrice = Number(order?.unitPrice)
+  const mappedPrice = unitPriceMap.get(userName)
+  const usesUnknownUserDefaultPrice = (!Number.isFinite(orderUnitPrice) || orderUnitPrice <= 0) &&
+    (!Number.isFinite(mappedPrice) || mappedPrice < 0)
+  if (usesUnknownUserDefaultPrice) {
+    const actual = getOrderActualReceivedAmount(order)
+    if (actual > 0) return actual
+  }
+  const unitPrice = getOrderUnitPrice(order, unitPriceMap)
   if (!Number.isFinite(quantity) || quantity <= 0) return 0
-  return Number((quantity * unitPrice).toFixed(2))
+  return roundMoney(quantity * unitPrice)
 }
 
 export function getOrderActualReceivedAmount(order) {
   const actual = Number(order?.actualAmountReceived || 0)
-  return Number.isFinite(actual) && actual >= 0 ? actual : 0
+  return Number.isFinite(actual) && actual >= 0 ? roundMoney(actual) : 0
 }
 
 /**
@@ -67,38 +101,6 @@ export function generateId(prefix = '') {
 }
 
 /**
- * 中文姓名转拼音用户名
- */
-export function nameToUsername(name) {
-  const pinyinMap = {
-    '老': 'lao', '张': 'zhang', '李': 'li', '梅': 'mei', '田': 'tian', '王': 'wang',
-    '陈': 'chen', '刘': 'liu', '黄': 'huang', '周': 'zhou', '吴': 'wu', '徐': 'xu',
-    '孙': 'sun', '胡': 'hu', '朱': 'zhu', '高': 'gao', '林': 'lin', '何': 'he',
-    '郭': 'guo', '马': 'ma', '罗': 'luo', '梁': 'liang', '宋': 'song', '郑': 'zheng',
-    '谢': 'xie', '韩': 'han', '唐': 'tang', '冯': 'feng', '于': 'yu', '董': 'dong',
-    '萧': 'xiao', '程': 'cheng', '曹': 'cao', '袁': 'yuan', '邓': 'deng', '许': 'xu',
-    '傅': 'fu', '沈': 'shen', '曾': 'zeng', '彭': 'peng', '吕': 'lv', '苏': 'su',
-    '卢': 'lu', '蒋': 'jiang', '蔡': 'cai', '贾': 'jia', '丁': 'ding', '魏': 'wei',
-    '薛': 'xue', '叶': 'ye', '阎': 'yan', '余': 'yu', '潘': 'pan', '杜': 'du',
-    '戴': 'dai', '夏': 'xia', '钟': 'zhong', '汪': 'wang', '任': 'ren'
-  }
-
-  let slug = ''
-  for (const char of name) {
-    if (pinyinMap[char]) {
-      slug += pinyinMap[char]
-    } else if (/[a-zA-Z0-9]/.test(char)) {
-      slug += char.toLowerCase()
-    }
-  }
-
-  if (!slug) {
-    slug = 'user_' + Math.random().toString(36).substr(2, 6)
-  }
-  return slug
-}
-
-/**
  * 解析批量用户文本（每行: 姓名 单价 结算方式）
  */
 export function parseBatchUsersText(inputText, existingUsers = []) {
@@ -106,10 +108,8 @@ export function parseBatchUsersText(inputText, existingUsers = []) {
 
   const parsedUsers = []
   const lines = inputText.split(/\n+/).map(line => line.trim()).filter(Boolean)
-  const existingUsernameSet = new Set(existingUsers.map(u => (u.username || '').toLowerCase()).filter(Boolean))
-  const existingNameSet = new Set(existingUsers.map(u => (u.name || '').trim().toLowerCase()).filter(Boolean))
-  const parsedUsernameCount = new Map()
-  const parsedNameCount = new Map()
+  const existingUserNameSet = new Set(existingUsers.map(u => (u.userName || '').trim().toLowerCase()).filter(Boolean))
+  const parsedUserNameCount = new Map()
 
   const normalizeSettlementType = (value) => {
     const text = String(value || '').trim().toLowerCase()
@@ -117,54 +117,74 @@ export function parseBatchUsersText(inputText, existingUsers = []) {
     return 'daily'
   }
 
-  const buildUserObj = (name, price, settlementType, index) => {
-    const username = nameToUsername(name)
-    const normalizedUsername = username.toLowerCase()
-    const normalizedName = String(name || '').trim().toLowerCase()
-    parsedUsernameCount.set(normalizedUsername, (parsedUsernameCount.get(normalizedUsername) || 0) + 1)
-    parsedNameCount.set(normalizedName, (parsedNameCount.get(normalizedName) || 0) + 1)
+  const isSettlementToken = (value) => /^(日结|月结|daily|monthly)$/i.test(String(value || '').trim())
+
+  const parseLine = (line) => {
+    const normalizedLine = String(line || '').replace(/[：:=,，]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!normalizedLine) return null
+    const tokens = normalizedLine.split(' ').filter(Boolean)
+    if (tokens.length === 0) return null
+
+    let settlementType = 'daily'
+    let endIndex = tokens.length
+    const lastToken = tokens[tokens.length - 1]
+    if (isSettlementToken(lastToken)) {
+      settlementType = normalizeSettlementType(lastToken)
+      endIndex -= 1
+    }
+
+    if (endIndex >= 2) {
+      const priceToken = tokens[endIndex - 1]
+      if (/^-?\d+(?:\.\d+)?$/.test(priceToken)) {
+        const userName = tokens.slice(0, endIndex - 1).join(' ').trim()
+        const price = parseFloat(priceToken)
+        if (userName) {
+          return {
+            userName,
+            price,
+            settlementType
+          }
+        }
+      }
+    }
+
+    return {
+      userName: normalizedLine,
+      price: 0,
+      settlementType: 'daily'
+    }
+  }
+
+  const buildUserObj = (userName, price, settlementType, index) => {
+    const normalizedUserName = String(userName || '').trim().toLowerCase()
+    parsedUserNameCount.set(normalizedUserName, (parsedUserNameCount.get(normalizedUserName) || 0) + 1)
 
     return {
       id: `batch-user-${Date.now()}-${index}`,
-      username,
-      name,
-      unitPrice: Number.isFinite(price) ? price : 0,
+      userName,
+      unitPrice: Number.isFinite(price) ? roundMoney(price) : 0,
       settlementType: normalizeSettlementType(settlementType),
       phone: '',
       address: '',
       notes: '',
       password: '',
-      duplicateInDatabase: existingUsernameSet.has(normalizedUsername) || existingNameSet.has(normalizedName),
+      duplicateInDatabase: existingUserNameSet.has(normalizedUserName),
       duplicateInBatch: false,
-      duplicateByUsername: existingUsernameSet.has(normalizedUsername),
-      duplicateByName: existingNameSet.has(normalizedName),
-      duplicateNameInBatch: false,
-      duplicateUsernameInBatch: false
+      duplicateByUserName: existingUserNameSet.has(normalizedUserName),
+      duplicateUserNameInBatch: false
     }
   }
 
   lines.forEach((line, idx) => {
-    const match = line.match(/^(.+?)(?:\s+|[:：=,，])(-?\d+(?:\.\d+)?)(?:(?:\s+|[:：=,，])(日结|月结|daily|monthly))?$/i)
-    if (match) {
-      const name = match[1].trim()
-      const price = parseFloat(match[2])
-      const settlementType = /^(月结|monthly)$/i.test(String(match[3] || '').trim()) ? 'monthly' : 'daily'
-      if (name) parsedUsers.push(buildUserObj(name, price, settlementType, idx))
-      return
-    }
-
-    const onlyName = line.replace(/[:：=,，]/g, ' ').trim()
-    if (onlyName) {
-      parsedUsers.push(buildUserObj(onlyName, 0, 'daily', idx))
-    }
+    const parsedLine = parseLine(line)
+    if (!parsedLine?.userName) return
+    parsedUsers.push(buildUserObj(parsedLine.userName, parsedLine.price, parsedLine.settlementType, idx))
   })
 
   parsedUsers.forEach(user => {
-    const normalizedUsername = (user.username || '').toLowerCase()
-    const normalizedName = (user.name || '').trim().toLowerCase()
-    user.duplicateUsernameInBatch = (parsedUsernameCount.get(normalizedUsername) || 0) > 1
-    user.duplicateNameInBatch = (parsedNameCount.get(normalizedName) || 0) > 1
-    user.duplicateInBatch = user.duplicateUsernameInBatch || user.duplicateNameInBatch
+    const normalizedUserName = (user.userName || '').trim().toLowerCase()
+    user.duplicateUserNameInBatch = (parsedUserNameCount.get(normalizedUserName) || 0) > 1
+    user.duplicateInBatch = user.duplicateUserNameInBatch
   })
 
   return parsedUsers
@@ -253,9 +273,9 @@ function chineseNumberToArabic(input) {
 }
 
 function replaceChineseNumberPhrases(text) {
-  return (text || '').replace(/([零〇一二两三四五六七八九十百千万]+)(?=(桶|元|块|月|号|日|\/|\s|$))/g, (match, numText) => {
+  return (text || '').replace(/(^|[\s:：,，])([零〇一二两三四五六七八九十百千万]+)(?=(桶|元|块|月|号|日|\/|\s|$))/gm, (match, prefix, numText) => {
     const parsed = chineseNumberToArabic(numText)
-    return Number.isFinite(parsed) ? String(parsed) : match
+    return Number.isFinite(parsed) ? `${prefix}${parsed}` : match
   })
 }
 
@@ -268,7 +288,7 @@ export function normalizeRecognizedOrderText(text) {
   normalized = normalized.replace(/(\d)\.(?=\s|$)/g, '$1 ')
   normalized = normalized.replace(/(送水|回桶|退桶|付款|实收|收款|扫码付|金额)/g, ' $1 ')
   normalized = normalized.replace(/(送|回|退|付|收|扫码)(\d)/g, '$1 $2')
-  normalized = normalized.replace(/([\u4e00-\u9fa5A-Za-z]+)(\d+(?:\/\d+)?)/g, '$1 $2')
+  normalized = normalized.replace(/([\u4e00-\u9fa5A-Za-z]+)(\d+(?:\/\d+){1,2})/g, '$1 $2')
   normalized = normalized.replace(/(\d+(?:\.\d+)?)(桶|元|块|号|日)/g, '$1 $2 ')
   normalized = normalized.replace(/(桶|元|块|号|日)([\u4e00-\u9fa5A-Za-z])/g, '$1 $2')
   normalized = normalized.replace(/(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日|号)?)([\u4e00-\u9fa5A-Za-z])/g, '$1\n$2')
@@ -285,7 +305,7 @@ export function parseCompactOrderSegments(text) {
   const normalized = text
     .replace(/[，,；;。]/g, ' ')
     .replace(/(\d)\.(?=\s|$)/g, '$1 ')
-    .replace(/([\u4e00-\u9fa5A-Za-z]+)(\d+(?:\/\d+)?)/g, '$1 $2')
+    .replace(/([\u4e00-\u9fa5A-Za-z]+)(\d+(?:\/\d+){1,2})/g, '$1 $2')
     .replace(/(送水|送|回桶|回|退桶|退|付款|付|实收|收款|收|扫码付|扫码|金额)(\d+(?:\.\d+)?)/g, '$1 $2')
     .replace(/(\d+(?:\.\d+)?)(桶|元|块)/g, '$1 $2')
     .replace(/\s+/g, ' ')
@@ -305,13 +325,22 @@ export function parseCompactOrderSegments(text) {
     let returnedBuckets = 0
     let actualAmountReceived = 0
     let actualAmountTouched = false
+    let quantityAssigned = false
+    let returnedBucketsAssigned = false
     const consumed = new Set()
+    const positionalNumbers = []
 
     detailTokens.forEach((token, idx) => {
-      const slashMatch = token.match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/)
+      const slashMatch = token.match(/^(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))(?:\/(\d+(?:\.\d+)?))?$/)
       if (!slashMatch) return
       quantity = parseFloat(slashMatch[1]) || 0
       returnedBuckets = parseFloat(slashMatch[2]) || 0
+      quantityAssigned = true
+      returnedBucketsAssigned = true
+      if (slashMatch[3] !== undefined) {
+        actualAmountReceived = parseFloat(slashMatch[3]) || 0
+        actualAmountTouched = true
+      }
       consumed.add(idx)
     })
 
@@ -331,30 +360,36 @@ export function parseCompactOrderSegments(text) {
       }
       if (/(回桶|回|退桶|退)/.test(prev)) {
         returnedBuckets = num
+        returnedBucketsAssigned = true
         consumed.add(idx)
         return
       }
       if (/(送水|送|购|买|配)/.test(prev)) {
         quantity = num
+        quantityAssigned = true
         consumed.add(idx)
+        return
       }
+
+      positionalNumbers.push(num)
     })
 
-    detailTokens.forEach((token, idx) => {
-      if (consumed.has(idx)) return
-      const numMatch = token.match(/^(\d+(?:\.\d+)?)$/)
-      if (!numMatch) return
-      const num = parseFloat(numMatch[1])
-      if (quantity === 0) quantity = num
-      else if (returnedBuckets === 0) returnedBuckets = num
-      else if (!actualAmountTouched) {
-        actualAmountReceived = num
+    if (positionalNumbers.length > 0) {
+      if (!quantityAssigned && positionalNumbers[0] !== undefined) {
+        quantity = positionalNumbers[0]
+        quantityAssigned = true
+      }
+      if (!returnedBucketsAssigned && positionalNumbers[1] !== undefined) {
+        returnedBuckets = positionalNumbers[1]
+        returnedBucketsAssigned = true
+      }
+      if (!actualAmountTouched && positionalNumbers[2] !== undefined) {
+        actualAmountReceived = positionalNumbers[2]
         actualAmountTouched = true
       }
-      consumed.add(idx)
-    })
+    }
 
-    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(returnedBuckets) || returnedBuckets < 0) {
+    if (!quantityAssigned || !returnedBucketsAssigned || !Number.isFinite(quantity) || quantity < 0 || !Number.isFinite(returnedBuckets) || returnedBuckets < 0) {
       return null
     }
 
