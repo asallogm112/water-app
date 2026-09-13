@@ -195,6 +195,117 @@ async function getOrderMergeStatusList() {
 	}
 }
 
+async function loadMiscRecords() {
+	try {
+		const result = unwrapServiceResult(await getService().getMiscRecordList({
+			sessionUserId: getSessionUserId()
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '\u52a0\u8f7d\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'),
+				records: []
+			}
+		}
+		return {
+			success: true,
+			records: clonePlainData(result.records, [])
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '\u52a0\u8f7d\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'),
+			records: []
+		}
+	}
+}
+
+async function addMiscRecords(recordList) {
+	if (!Array.isArray(recordList) || recordList.length === 0) {
+		return {
+			success: false,
+			message: '\u6ca1\u6709\u53ef\u5f55\u5165\u7684\u8bb0\u5f55',
+			records: []
+		}
+	}
+	try {
+		const result = unwrapServiceResult(await getService().addMiscRecords({
+			sessionUserId: getSessionUserId(),
+			records: recordList
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '\u5f55\u5165\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'),
+				records: []
+			}
+		}
+		return {
+			success: true,
+			records: clonePlainData(result.records, [])
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '\u5f55\u5165\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'),
+			records: []
+		}
+	}
+}
+
+async function updateMiscRecord(recordId, recordData) {
+	try {
+		const result = unwrapServiceResult(await getService().updateMiscRecord({
+			sessionUserId: getSessionUserId(),
+			recordId,
+			recordData
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '\u66f4\u65b0\u8bb0\u5f55\u5931\u8d25')
+			}
+		}
+		return {
+			success: true
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '\u66f4\u65b0\u8bb0\u5f55\u5931\u8d25')
+		}
+	}
+}
+
+async function deleteMiscRecord(recordId) {
+	if (!recordId) {
+		return {
+			success: false,
+			message: '\u8bb0\u5f55\u53c2\u6570\u4e0d\u6b63\u786e'
+		}
+	}
+	try {
+		const result = unwrapServiceResult(await getService().deleteMiscRecord({
+			sessionUserId: getSessionUserId(),
+			recordId
+		}))
+		if (!result?.success) {
+			return {
+				success: false,
+				message: formatErrorMessage(result?.message, '\u5220\u9664\u8bb0\u5f55\u5931\u8d25')
+			}
+		}
+		return {
+			success: true
+		}
+	} catch (error) {
+		return {
+			success: false,
+			message: formatErrorMessage(error, '\u5220\u9664\u8bb0\u5f55\u5931\u8d25')
+		}
+	}
+}
+
 async function setOrderMergeStatus(date, isMerged) {
 	const result = unwrapServiceResult(await getService().setOrderMergeStatus({
 		sessionUserId: getSessionUserId(),
@@ -596,6 +707,10 @@ export function useStore() {
 		getOrderMergeStatusList,
 		setOrderMergeStatus,
 		getOrderMedia,
+		loadMiscRecords,
+		addMiscRecords,
+		updateMiscRecord,
+		deleteMiscRecord,
 		showNotification,
 		formatDateTime,
 		formatBeijingDateTime,

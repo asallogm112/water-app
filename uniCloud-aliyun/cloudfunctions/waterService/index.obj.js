@@ -2,6 +2,7 @@ const CUSTOMER_COLLECTION = 'user_list'
 const ORDER_COLLECTION = 'order_list'
 const ADMIN_COLLECTION = 'admin_list'
 const ORDER_MERGE_COLLECTION = 'order_merge_status'
+const MISC_RECORD_COLLECTION = 'misc_record_list'
 const DB_PAGE_SIZE = 500
 
 function normalizeText(value) {
@@ -366,6 +367,29 @@ async function loadOrderMergeStatuses(db) {
 		})
 		.orderBy('date', 'desc'))
 	return data.map(sanitizeMergeStatusRecord).filter(Boolean)
+}
+
+function sanitizeMiscRecord(record) {
+	if (!record) return null
+	const name = normalizeText(record.name)
+	const month = normalizeText(record.month).slice(0, 7)
+	if (!name || !/^\d{4}-\d{2}$/.test(month)) return null
+	const amount = Number(record.amount)
+	return {
+		_id: record._id,
+		type: normalizeText(record.type) === '工资' ? '工资' : '报销',
+		name,
+		desc: normalizeText(record.desc),
+		amount: Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0,
+		month,
+		createdAt: normalizeText(record.createdAt),
+		updatedAt: normalizeText(record.updatedAt)
+	}
+}
+
+async function loadMiscRecords(db) {
+	const data = await fetchAllCollectionData(() => db.collection(MISC_RECORD_COLLECTION))
+	return data.map(sanitizeMiscRecord).filter(Boolean)
 }
 
 function wrapServiceMethods(service) {
@@ -951,6 +975,134 @@ const serviceHandlers = {
 			return {
 				success: false,
 				message: error.message || '删除订单失败'
+			}
+		}
+	},
+	async getMiscRecordList({
+		sessionUserId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const records = await loadMiscRecords(db)
+			return {
+				success: true,
+				records
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '\u52a0\u8f7d\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'
+			}
+		}
+	},
+	async addMiscRecords({
+		sessionUserId,
+		records = []
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			if (!Array.isArray(records) || records.length === 0) {
+				return {
+					success: false,
+					message: '\u6ca1\u6709\u53ef\u5f55\u5165\u7684\u8bb0\u5f55'
+				}
+			}
+			const addedRecords = []
+			for (const rawRecord of records) {
+				const record = sanitizeMiscRecord(rawRecord)
+				if (!record) continue
+				const now = formatDateTime(new Date())
+				const payload = {
+					type: record.type,
+					name: record.name,
+					desc: record.desc,
+					amount: record.amount,
+					month: record.month,
+					createdAt: record.createdAt || now,
+					updatedAt: now
+				}
+				const res = await db.collection(MISC_RECORD_COLLECTION).add(payload)
+				addedRecords.push({
+					_id: res.id || res._id,
+					...payload
+				})
+			}
+			return {
+				success: true,
+				addedCount: addedRecords.length,
+				records: addedRecords
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '\u5f55\u5165\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'
+			}
+		}
+	},
+	async updateMiscRecord({
+		sessionUserId,
+		recordId,
+		recordData
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const targetId = normalizeText(recordId)
+			if (!targetId) {
+				return {
+					success: false,
+					message: '\u8bb0\u5f55\u53c2\u6570\u4e0d\u6b63\u786e'
+				}
+			}
+			const record = sanitizeMiscRecord(recordData)
+			if (!record) {
+				return {
+					success: false,
+					message: '\u8bb0\u5f55\u5185\u5bb9\u4e0d\u5b8c\u6574'
+				}
+			}
+			await db.collection(MISC_RECORD_COLLECTION).doc(targetId).update({
+				type: record.type,
+				name: record.name,
+				desc: record.desc,
+				amount: record.amount,
+				month: record.month,
+				updatedAt: formatDateTime(new Date())
+			})
+			return {
+				success: true
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '\u66f4\u65b0\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'
+			}
+		}
+	},
+	async deleteMiscRecord({
+		sessionUserId,
+		recordId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const targetId = normalizeText(recordId)
+			if (!targetId) {
+				return {
+					success: false,
+					message: '\u8bb0\u5f55\u53c2\u6570\u4e0d\u6b63\u786e'
+				}
+			}
+			await db.collection(MISC_RECORD_COLLECTION).doc(targetId).remove()
+			return {
+				success: true
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '\u5220\u9664\u5de5\u8d44\u62a5\u9500\u8bb0\u5f55\u5931\u8d25'
 			}
 		}
 	},

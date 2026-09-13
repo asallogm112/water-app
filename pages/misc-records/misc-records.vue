@@ -7,7 +7,8 @@
           <view class="filter-top-row">
             <text class="section-label">记录月份</text>
             <view class="action-group">
-              <view class="customer-copy-btn" @tap="openBatchAdd"><text class="customer-copy-btn-text">批量录入</text></view>
+              <view class="customer-copy-btn" @tap="openBatchAdd('工资')"><text class="customer-copy-btn-text">工资</text></view>
+              <view class="customer-copy-btn" @tap="openBatchAdd('报销')"><text class="customer-copy-btn-text">报销</text></view>
               <view class="customer-copy-btn" @tap="handleExport"><text class="customer-copy-btn-text">导出</text></view>
             </view>
           </view>
@@ -38,22 +39,46 @@
           </view>
         </view>
 
-        <!-- 记录明细 -->
+        <!-- 记录明细：工资 / 报销 分成两块独立显示 -->
         <text class="section-title">{{ monthDisplayLabel }} 记录明细</text>
 
-        <view v-if="shownRecords.length === 0" class="empty-state">
+        <view v-if="monthRecords.length === 0" class="empty-state">
           <text class="empty-icon">📄</text>
           <text>本月暂无记录</text>
         </view>
 
-        <!-- 当前选中类型的列表 -->
-        <view v-for="rec in shownRecords" :key="rec.id" class="misc-item" @tap="openEdit(rec)">
-          <view class="misc-item-header">
-            <text class="misc-type" :class="rec.type === '报销' ? 'misc-type-0' : 'misc-type-1'">{{ rec.type }}</text>
-            <text class="misc-name">{{ rec.name }}</text>
-            <text class="misc-amount" :class="rec.type === '报销' ? 'text-receivable-dark' : ''">¥{{ formatMoney(rec.amount) }}</text>
+        <view v-else>
+          <!-- 工资 -->
+          <view class="misc-group">
+            <view class="misc-group-head">
+              <text class="misc-group-title misc-group-title-1">工资</text>
+              <text class="misc-group-count">{{ salaryRecords.length }} 条</text>
+            </view>
+            <view v-if="salaryRecords.length === 0" class="misc-group-empty">本月暂无工资记录</view>
+            <view v-for="rec in salaryRecords" :key="rec.id" class="misc-item" @tap="openEdit(rec)">
+              <view class="misc-item-header">
+                <text class="misc-name">{{ rec.name }}</text>
+                <text class="misc-amount">¥{{ formatMoney(rec.amount) }}</text>
+              </view>
+              <text v-if="rec.desc" class="misc-desc">{{ rec.desc }}</text>
+            </view>
           </view>
-          <text v-if="rec.desc" class="misc-desc">{{ rec.desc }}</text>
+
+          <!-- 报销 -->
+          <view class="misc-group">
+            <view class="misc-group-head">
+              <text class="misc-group-title misc-group-title-0">报销</text>
+              <text class="misc-group-count">{{ reimburseRecords.length }} 条</text>
+            </view>
+            <view v-if="reimburseRecords.length === 0" class="misc-group-empty">本月暂无报销记录</view>
+            <view v-for="rec in reimburseRecords" :key="rec.id" class="misc-item" @tap="openEdit(rec)">
+              <view class="misc-item-header">
+                <text class="misc-name">{{ rec.name }}</text>
+                <text class="misc-amount text-receivable-dark">¥{{ formatMoney(rec.amount) }}</text>
+              </view>
+              <text v-if="rec.desc" class="misc-desc">{{ rec.desc }}</text>
+            </view>
+          </view>
         </view>
         <view class="safe-bottom"></view>
       </view>
@@ -70,13 +95,9 @@
           <text class="editor-close" @tap="closeModal">关闭</text>
         </view>
         <scroll-view class="editor-body" scroll-y @touchmove.stop>
-          <view v-if="!editingId" class="type-picker-row">
-            <view v-for="t in typeOptions" :key="t" class="type-chip" :class="[form.type === t ? 'type-chip-on type-chip-on-' + (t === '报销' ? '0' : '1') : '']" @tap="form.type = t">
-              <text>{{ t }}</text>
-            </view>
-          </view>
           <view class="editor-grid">
-            <view class="editor-field editor-field-full">
+            <!-- 报销编辑时姓名不显示（不可修改） -->
+            <view v-if="form.type !== '报销' || !editingId" class="editor-field editor-field-full">
               <text class="editor-label">姓名</text>
               <uni-easyinput class="editor-input" type="text" v-model="form.name" :inputBorder="false" placeholder="谁报销 / 谁工资" />
             </view>
@@ -97,8 +118,8 @@
               <uni-easyinput class="editor-input" type="digit" v-model="form.amount" :inputBorder="false" placeholder="如：5000" />
             </view>
           </view>
-          <!-- 记录月份：编辑时可改，新增默认当前月 -->
-          <view class="editor-field editor-field-full">
+          <!-- 记录月份：仅工资可选（报销的月份一般不用修改） -->
+          <view v-if="form.type === '工资'" class="editor-field editor-field-full">
             <text class="editor-label">记录月份</text>
             <picker class="editor-month-picker" mode="selector" :range="availableMonths" :value="editMonthIndex" @change="onEditMonthChange">
               <view class="editor-month-display"><text>{{ form.month }}</text><text class="picker-arrow">▼</text></view>
@@ -124,13 +145,6 @@
         </view>
 
         <scroll-view class="batch-modal-body" scroll-y @touchmove.stop>
-          <!-- 类型切换 -->
-          <view class="type-picker-row">
-            <view v-for="(t, ti) in typeOptions" :key="t" class="type-chip" :class="[batchType === t ? 'type-chip-on type-chip-on-' + ti : '']" @tap="switchBatchType(t)">
-              <text>{{ t }}</text>
-            </view>
-          </view>
-
           <view v-if="batchError" class="error-banner"><text>{{ batchError }}</text></view>
 
           <!-- 报销：姓名统一；工资：每行带姓名 -->
@@ -176,9 +190,10 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { formatMoney } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
+import { useStore } from '../../common/store.js'
 
 const STORAGE_KEY = 'misc_records_v2'
 // 记住上次录入的人名，下次新增默认沿用
@@ -229,6 +244,72 @@ const showModal = ref(false)
 const editingId = ref('')
 const form = ref({ type: '报销', name: '', desc: '', amount: '', month: '' })
 
+const store = useStore()
+// 云端记录 → 本地结构（id 统一用云端 _id）
+const mapCloudRecord = (record) => ({
+  id: record._id || record.id,
+  type: record.type === '工资' ? '工资' : '报销',
+  name: String(record.name || ''),
+  desc: String(record.desc || ''),
+  amount: Number(record.amount) || 0,
+  month: String(record.month || '').substring(0, 7),
+  createdAt: record.createdAt || ''
+})
+// 本地记录 → 云端入库字段
+const buildCloudPayload = (record) => ({
+  type: record.type,
+  name: record.name,
+  desc: record.desc || '',
+  amount: Number(record.amount) || 0,
+  month: String(record.month || '').substring(0, 7)
+})
+const syncing = ref(false)
+// 同一次启动内只同步一次，避免不必要的云端请求（unicloud 按量计费）
+const hasSyncedOnce = ref(false)
+// 记录去重 key（云端/本机比对，避免重复上传）
+const buildRecordKey = (record) => [
+  record.type,
+  String(record.month || '').substring(0, 7),
+  String(record.name || ''),
+  String(record.desc || ''),
+  Number(record.amount) || 0
+].join('|')
+// 进入页面同步云端：云端为主，本机独有的历史数据自动补传云端（解决换手机/多设备数据丢失）
+const syncRecordsFromCloud = async () => {
+  if (syncing.value) return
+  syncing.value = true
+  try {
+    const result = await store.loadMiscRecords()
+    if (!result.success) {
+      // 同步失败则允许下次进入再试
+      hasSyncedOnce.value = false
+      return
+    }
+    const cloudRecords = result.records || []
+    const merged = cloudRecords.map(mapCloudRecord)
+    const cloudKeys = new Set(cloudRecords.map(buildRecordKey))
+    const localOnly = records.value.filter(r => !cloudKeys.has(buildRecordKey(r)))
+    if (localOnly.length > 0) {
+      const pushed = await store.addMiscRecords(localOnly.map(buildCloudPayload))
+      if (pushed.success && pushed.records?.length) {
+        merged.unshift(...pushed.records.map(mapCloudRecord))
+        uni.showToast({ title: `已同步 ${pushed.records.length} 条本机记录到云端`, icon: 'none' })
+      } else {
+        merged.unshift(...localOnly)
+      }
+    }
+    records.value = merged
+    persist()
+  } finally {
+    syncing.value = false
+  }
+}
+onMounted(() => {
+  if (hasSyncedOnce.value) return
+  hasSyncedOnce.value = true
+  syncRecordsFromCloud()
+})
+
 const availableMonths = computed(() => {
   const list = []
   const cur = new Date()
@@ -254,8 +335,9 @@ const monthRecords = computed(() => {
 
 const groupByType = (type) => monthRecords.value.filter(r => r.type === type)
 
-// 当月全部记录（工资+报销，按姓名排序）
-const shownRecords = computed(() => monthRecords.value)
+// 工资、报销分开显示（各自独立一块，不混排）
+const salaryRecords = computed(() => groupByType('工资'))
+const reimburseRecords = computed(() => groupByType('报销'))
 
 const sumByType = (type) => monthRecords.value
   .filter(r => r.type === type)
@@ -331,7 +413,7 @@ const extractAmountFromText = (text) => {
   return null
 }
 
-const saveRecord = () => {
+const saveRecord = async () => {
   const type = form.value.type
   const name = String(form.value.name || '').trim()
   const desc = String(form.value.desc || '').trim()
@@ -362,11 +444,23 @@ const saveRecord = () => {
   selectedMonth.value = month
   persistSelectedMonth(month)
   if (editingId.value) {
-    records.value = records.value.map(r => (r.id === editingId.value ? { ...r, ...payload } : r))
+    // 编辑：云端更新（失败则仍保存到本机，并提示）
+    const targetId = editingId.value
+    const res = await store.updateMiscRecord(targetId, payload)
+    records.value = records.value.map(r => (r.id === targetId ? { ...r, ...payload } : r))
+    persist()
+    if (!res.success) uni.showToast({ title: res.message || '云端同步失败，已存本机', icon: 'none' })
   } else {
-    records.value = [{ id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...payload }, ...records.value]
+    // 新增：写入云端（拿到云端 _id）；失败则降级存本机
+    const res = await store.addMiscRecords([payload])
+    if (res.success && res.records?.length) {
+      records.value = [...res.records.map(mapCloudRecord), ...records.value]
+    } else {
+      records.value = [{ id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...payload }, ...records.value]
+      uni.showToast({ title: res.message || '云端同步失败，已存本机', icon: 'none' })
+    }
+    persist()
   }
-  persist()
   closeModal()
 }
 
@@ -434,8 +528,9 @@ const isBatchItemDuplicate = (id, field) => {
 const duplicateBatchItems = computed(() => batchItems.value.filter(item => isBatchItemDuplicate(item.id)))
 const submittableBatchItems = computed(() => batchItems.value.filter(item => !isBatchItemDuplicate(item.id)))
 
-const openBatchAdd = () => {
-  batchType.value = '报销'
+// 按入口类型直接打开对应的批量录入（工资 / 报销），弹窗内不再切换类型
+const openBatchAdd = (type = '工资') => {
+  batchType.value = type === '报销' ? '报销' : '工资'
   // 姓名默认沿用上次，不用每行都填
   batchName.value = readLastName()
   batchText.value = ''
@@ -446,15 +541,6 @@ const openBatchAdd = () => {
 
 const closeBatch = () => {
   showBatchModal.value = false
-  batchItems.value = []
-  batchError.value = ''
-}
-
-// 切换类型：清空已解析内容和输入
-const switchBatchType = (type) => {
-  if (batchType.value === type) return
-  batchType.value = type
-  batchText.value = ''
   batchItems.value = []
   batchError.value = ''
 }
@@ -540,7 +626,7 @@ const removeBatchItem = (id) => {
   batchItems.value = batchItems.value.filter(item => item.id !== id)
 }
 
-const submitBatch = () => {
+const submitBatch = async () => {
   const items = submittableBatchItems.value
   if (items.length === 0) {
     batchError.value = duplicateBatchItems.value.length > 0
@@ -548,18 +634,24 @@ const submitBatch = () => {
       : '请先解析内容'
     return
   }
-  const newRecords = items.map(item => ({
-    id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  const payloads = items.map(item => ({
     type: item.type,
     name: item.name,
     month: item.month,
     desc: item.desc,
     amount: item.amount
   }))
+  // 批量写入云端；失败则降级存本机
+  const res = await store.addMiscRecords(payloads)
+  const newRecords = res.success && res.records?.length
+    ? res.records.map(mapCloudRecord)
+    : payloads.map(p => ({ id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...p }))
+  if (!res.success) uni.showToast({ title: res.message || '云端同步失败，已存本机', icon: 'none' })
+  // 注意：重复数必须在写入 records 之前取，否则刚录入的记录会被误判为"本月已存在"
+  const skipped = duplicateBatchItems.value.length
   records.value = [...newRecords, ...records.value]
   persist()
   if (newRecords[0]?.name) uni.setStorageSync(LAST_NAME_KEY, String(newRecords[0].name))
-  const skipped = duplicateBatchItems.value.length
   batchText.value = ''
   batchItems.value = []
   batchError.value = ''
@@ -574,11 +666,14 @@ const confirmDelete = () => {
   uni.showModal({
     title: '删除记录',
     content: '确认删除这条记录吗？',
-    success: ({ confirm }) => {
+    success: async ({ confirm }) => {
       if (!confirm) return
-      records.value = records.value.filter(r => r.id !== editingId.value)
+      const targetId = editingId.value
+      const res = await store.deleteMiscRecord(targetId)
+      records.value = records.value.filter(r => r.id !== targetId)
       persist()
       closeModal()
+      if (!res.success) uni.showToast({ title: res.message || '云端同步失败，已从本机删除', icon: 'none' })
     }
   })
 }
@@ -619,14 +714,7 @@ const buildCombinedSheetRows = () => {
   const salary = groupByType('工资')
   const rows = []
   const merges = []
-  let rowIndex = 1 // 行号从 1 开始（标题占第 1 行）
-
-  // 顶部大标题
-  rows.push([{ value: `${monthShort.value} 工资报销记录`, style: 'title' }])
-  merges.push({ start: `A${rowIndex}`, end: `C${rowIndex}` })
-  rowIndex += 1
-  rows.push(['', '', ''])
-  rowIndex += 1
+  let rowIndex = 1 // 行号从 1 开始
 
   // ===== 工资段 =====
   if (salary.length > 0) {
@@ -644,10 +732,11 @@ const buildCombinedSheetRows = () => {
     ])
     rowIndex += 1
     salary.forEach(rec => {
+      // 明细行（姓名/事项/金额）统一黑色
       rows.push([
-        { value: rec.name || '', style: 'monthly' },
-        '工资',
-        { value: Number((Number(rec.amount) || 0).toFixed(2)), style: 'red' }
+        { value: rec.name || '', style: 'black' },
+        { value: '工资', style: 'black' },
+        { value: Number((Number(rec.amount) || 0).toFixed(2)), style: 'black' }
       ])
     })
     rowIndex += salary.length
@@ -675,10 +764,11 @@ const buildCombinedSheetRows = () => {
     reimburse.forEach(rec => {
       // 报销：金额已有独立"金额(元)"列，事项列不再拼金额（并剥离存储里可能残留的金额文字）
       const itemText = stripAmountText(rec.desc)
+      // 明细行（姓名/事项/金额）统一黑色
       rows.push([
-        { value: rec.name || '', style: 'monthly' },
-        itemText || '—',
-        { value: Number((Number(rec.amount) || 0).toFixed(2)), style: 'red' }
+        { value: rec.name || '', style: 'black' },
+        { value: itemText || '—', style: 'black' },
+        { value: Number((Number(rec.amount) || 0).toFixed(2)), style: 'black' }
       ])
     })
     rowIndex += reimburse.length
@@ -689,7 +779,6 @@ const buildCombinedSheetRows = () => {
     rows,
     defaultRowHeight: 27,
     columnWidths,
-    rowHeights: { 1: 32 },
     merges
   }
 }
@@ -752,9 +841,14 @@ const handleExport = () => {
 .empty-state { text-align: center; padding: 32px; font-size: 12px; color: #94a3b8; }
 .empty-icon { font-size: 24px; display: block; margin-bottom: 8px; }
 
-.misc-type { font-size: 9px; font-weight: 800; color: #fff; border-radius: 6px; padding: 2px 8px; flex-shrink: 0; }
-.misc-type-0 { background: #7c3aed; }
-.misc-type-1 { background: #ea580c; }
+/* 工资 / 报销 分组 */
+.misc-group { margin-bottom: 18px; }
+.misc-group-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; }
+.misc-group-title { font-size: 13px; font-weight: 800; }
+.misc-group-title-0 { color: #7c3aed; }
+.misc-group-title-1 { color: #ea580c; }
+.misc-group-count { font-size: 10px; font-weight: 700; color: #94a3b8; }
+.misc-group-empty { padding: 18px; text-align: center; font-size: 12px; color: #94a3b8; background: #fff; border: 1px solid #e8eef5; border-radius: 14px; }
 
 .misc-item { background: #fff; border-radius: 14px; border: 1px solid #e8eef5; box-shadow: 0 6px 16px rgba(15,23,42,0.03); padding: 12px; margin-bottom: 8px; }
 .misc-item-header { display: flex; align-items: center; gap: 8px; }

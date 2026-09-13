@@ -846,13 +846,16 @@ const parseRemarkEntries = (notes) => {
 }
 
 // 备注里只写一个数字时，用「拉水/回桶」关键词判断这个数字属于哪个项目
-// 写了「回桶」→ 算回桶；写了「拉水」或没写 → 默认算拉水
+// 写了「回桶」→ 回桶；写了「拉水」→ 拉水；两个都写或都没写 → 无法判断（null，按普通备注显示原文）
 const detectSingleRemarkType = (notes) => {
   const text = String(notes || '')
   const hasReturned = /回桶/.test(text)
   const hasWater = /拉水|送水/.test(text)
   if (hasReturned && !hasWater) return '回桶'
-  return '拉水'
+  if (hasWater && !hasReturned) return '拉水'
+  // 「拉水/回桶」写法（两个关键词都出现）按拉水处理
+  if (hasWater && hasReturned) return '拉水'
+  return null
 }
 
 // 统计单个订单备注的对账记录（客户在前与我比较），页面展示与 Excel 导出共用
@@ -919,10 +922,14 @@ const buildRemarkDiffSegments = (order) => buildRemarkDiffRecords(order).map(rec
 ])
 
 // 判断备注是否能解析出有效的对账条目（同时含「我」和另一方）
+// 只写一个数字时必须写明「拉水/回桶」，否则视为普通备注（直接显示原文）
 const canParseRemarkOrder = (notes) => {
   const entries = parseRemarkEntries(notes)
   if (entries.length === 0) return false
-  return entries.some(item => item.name !== '我') && entries.some(item => item.name === '我')
+  if (!entries.some(item => item.name !== '我') || !entries.some(item => item.name === '我')) return false
+  const hasTwoNumberEntry = entries.some(item => item.second !== null)
+  if (!hasTwoNumberEntry && !detectSingleRemarkType(notes)) return false
+  return true
 }
 
 // 差值片段着色：red 红色（我们亏钱），green 绿色（我们占便宜）

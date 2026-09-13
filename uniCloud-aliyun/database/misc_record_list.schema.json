@@ -1,0 +1,53 @@
+{
+  "bsonType": "object",
+  "required": ["type", "name", "month"],
+  "permission": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "记录ID，系统自动生成"
+    },
+    "type": {
+      "bsonType": "string",
+      "title": "类型",
+      "description": "工资 / 报销",
+      "trim": "both"
+    },
+    "name": {
+      "bsonType": "string",
+      "title": "姓名",
+      "description": "报销人 / 领工资的人",
+      "trim": "both"
+    },
+    "desc": {
+      "bsonType": "string",
+      "title": "事项",
+      "description": "报销内容或工资说明",
+      "trim": "both"
+    },
+    "amount": {
+      "bsonType": "double",
+      "title": "金额",
+      "description": "单位：元"
+    },
+    "month": {
+      "bsonType": "string",
+      "title": "所属月份",
+      "description": "格式: YYYY-MM"
+    },
+    "createdAt": {
+      "bsonType": "string",
+      "title": "创建时间",
+      "description": "格式: YYYY-MM-DD HH:mm:ss"
+    },
+    "updatedAt": {
+      "bsonType": "string",
+      "title": "更新时间",
+      "description": "格式: YYYY-MM-DD HH:mm:ss"
+    }
+  }
+}

@@ -58,6 +58,7 @@ function getStyleId(style) {
 	if (style === 'red') return 5
 	if (style === 'orange') return 6
 	if (style === 'purple') return 7
+	if (style === 'black') return 8
 	return 0
 }
 
@@ -135,7 +136,7 @@ function buildRootRelsXml() {
 function buildStylesXml() {
 	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-	<fonts count="8">
+	<fonts count="9">
 		<font>
 			<sz val="10"/>
 			<name val="Microsoft YaHei"/>
@@ -181,6 +182,11 @@ function buildStylesXml() {
 			<color rgb="FF7C3AED"/>
 			<name val="Microsoft YaHei"/>
 		</font>
+		<font>
+			<sz val="10"/>
+			<color rgb="FF000000"/>
+			<name val="Microsoft YaHei"/>
+		</font>
 	</fonts>
 	<fills count="2">
 		<fill><patternFill patternType="none"/></fill>
@@ -192,7 +198,7 @@ function buildStylesXml() {
 	<cellStyleXfs count="1">
 		<xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
 	</cellStyleXfs>
-	<cellXfs count="8">
+	<cellXfs count="9">
 		<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 		<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 		<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
@@ -201,6 +207,7 @@ function buildStylesXml() {
 		<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 		<xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 		<xf numFmtId="0" fontId="7" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+		<xf numFmtId="0" fontId="8" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 	</cellXfs>
 	<cellStyles count="1">
 		<cellStyle name="Normal" xfId="0" builtinId="0"/>
