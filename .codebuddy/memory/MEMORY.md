@@ -21,6 +21,14 @@
 - 页面左右 padding 16px
 - 功能色：杂事页拉水紫 `#7c3aed`、回桶橙 `#ea580c`（保留，不要统一掉）
 
+## 环境：Git 推送（重要）
+- 本机代理软件是**自由猫（ziyoumaoC），监听 `127.0.0.1:7892`**；环境变量里残留的 `HTTP_PROXY=127.0.0.1:7890` 是错的（会导致 "Failed to connect to 127.0.0.1:7890"）
+- **正确的推送命令**（用真实端口、屏蔽错误环境变量）：
+  `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY git -c http.proxy=http://127.0.0.1:7892 -c https.proxy=http://127.0.0.1:7892 push origin main`
+- **不要加 `-c http.version=HTTP/1.1`**（会导致 `SSL_ERROR_SYSCALL`）；不加即可成功
+- 远程：https://github.com/asallogm112/water-app.git，主分支 main
+- 已发布 tag：v5.0（工资报销初版）、v10.0（所有功能完善，含工资报销）
+
 ## 技术要点
 - **数据存储**：订单/客户/合并状态/工资报销全部走 uniCloud 云对象 `waterService`（集合：order_list、user_list、admin_list、order_merge_status、misc_record_list）；本机 storage 仅作缓存兜底
 - **⚠️ 行尾陷阱**：`index.obj.js`、`store.js` 等是**混合行尾**（CRLF+LF），`replace_in_file` 会统一成 LF 造成全文件 diff。改这类文件必须 `git checkout` 恢复后用 python 二进制插入（沿用原位行尾）
