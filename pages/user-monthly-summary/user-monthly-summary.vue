@@ -149,28 +149,25 @@
                 </view>
               </view>
 
+              <!-- 发水 / 回桶 / 应收 / 实收：固定 2 行 2 列 -->
               <view class="order-item-grid">
-                <view class="order-item-row">
-                  <view class="order-item-cell order-item-cell-half">
-                    <text class="order-item-cell-label">发水</text>
-                    <text class="order-item-cell-value">{{ ord.quantity }} 桶</text>
-                  </view>
-                  <view class="order-item-cell order-item-cell-half">
-                    <text class="order-item-cell-label">回桶</text>
-                    <text class="order-item-cell-value">{{ ord.returnedBuckets }} 个</text>
-                  </view>
+                <view class="order-item-cell">
+                  <text class="order-item-cell-label">发水</text>
+                  <text class="order-item-cell-value">{{ ord.quantity }} 桶</text>
                 </view>
-                <view class="order-item-row">
-                  <view class="order-item-cell order-item-cell-half order-item-cell-accent">
-                    <text class="order-item-cell-label">应收</text>
-                    <text class="order-item-cell-value text-receivable">¥{{ formatMoney(getReceivableAmount(ord)) }}</text>
-                  </view>
-                  <view class="order-item-cell order-item-cell-half order-item-cell-accent">
-                    <text class="order-item-cell-label">实收</text>
-                    <text class="order-item-cell-value" :class="getActualAmount(ord) >= getReceivableAmount(ord) ? 'text-emerald' : 'text-red'">
-                      ¥{{ formatMoney(getActualAmount(ord)) }}
-                    </text>
-                  </view>
+                <view class="order-item-cell">
+                  <text class="order-item-cell-label">回桶</text>
+                  <text class="order-item-cell-value">{{ ord.returnedBuckets }} 个</text>
+                </view>
+                <view class="order-item-cell order-item-cell-accent">
+                  <text class="order-item-cell-label">应收</text>
+                  <text class="order-item-cell-value text-receivable">¥{{ formatMoney(getReceivableAmount(ord)) }}</text>
+                </view>
+                <view class="order-item-cell order-item-cell-accent">
+                  <text class="order-item-cell-label">实收</text>
+                  <text class="order-item-cell-value" :class="getActualAmount(ord) >= getReceivableAmount(ord) ? 'text-emerald' : 'text-red'">
+                    ¥{{ formatMoney(getActualAmount(ord)) }}
+                  </text>
                 </view>
               </view>
 
@@ -1537,7 +1534,8 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 .month-header-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .month-header-title-text { font-size: 10px; font-weight: 800; color: #1e293b; }
 .month-header-order-count { font-size: 9px; font-weight: 400; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 999px; font-family: monospace; }
-.month-header-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; }
+/* 送水 / 回桶 / 应收 / 实收：固定 2 行 2 列 */
+.month-header-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; margin-top: 6px; }
 .month-header-stat { font-size: 10px; color: #64748b; }
 .stat-bold { font-weight: 700; color: #1e293b; }
 .text-receivable { color: #dc2626; }
@@ -1553,13 +1551,12 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 .order-item-add-btn { padding: 5px 10px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; font-size: 10px; font-weight: 700; color: #047857; }
 .order-item-edit-btn { margin-left: auto; padding: 5px 10px; background: #f8fafc; border: 1px solid #dbe4ee; border-radius: 10px; font-size: 10px; font-weight: 700; color: #334155; }
 
-.order-item-grid { display: flex; flex-direction: column; gap: 6px; }
-.order-item-row { display: flex; gap: 6px; }
+/* 发水 / 回桶 / 应收 / 实收：固定 2 行 2 列 */
+.order-item-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .order-item-cell {
   box-sizing: border-box; text-align: center;
   padding: 7px 6px; background: #f8fafc; border: 1px solid #e8eef5; border-radius: 10px;
 }
-.order-item-cell-half { width: calc(50% - 3px); }
 .order-item-cell-accent { background: rgba(239,246,255,0.6); border-color: #dbeafe; }
 .order-item-cell-label { font-size: 8px; color: #94a3b8; display: block; }
 .order-item-cell-value { font-size: 10px; font-weight: 900; color: #1e293b; font-family: monospace; }

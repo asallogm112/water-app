@@ -175,12 +175,10 @@
                   <view class="result-preview-wrap">
                     <text class="result-preview-line" :class="isBatchItemDuplicate(item.id) ? 'result-preview-line-duplicate' : 'result-preview-line-unique'">{{ formatBatchPreviewLine(item) }}</text>
                   </view>
-                  <text v-if="isBatchItemDuplicate(item.id)" class="batch-dup-hint">{{ isBatchItemDuplicate(item.id, 'duplicateInBatch') ? '本次重复，已禁止' : '本月已存在，已禁止' }}</text>
                 </view>
                 <view class="result-delete-btn" @tap="removeBatchItem(item.id)">删除</view>
               </view>
-              <view v-if="duplicateBatchItems.length > 0" class="batch-dup-summary">检测到 {{ duplicateBatchItems.length }} 条重复，已禁止录入</view>
-              <button class="result-submit-btn" :class="{ 'btn-disabled': submittableBatchItems.length === 0 }" :disabled="submittableBatchItems.length === 0" @tap="submitBatch">提交这 {{ submittableBatchItems.length }} 条{{ batchType }}</button>
+              <button class="result-submit-btn" :class="{ 'btn-disabled': batchItems.length === 0 }" :disabled="batchItems.length === 0" @tap="submitBatch">提交这 {{ batchItems.length }} 条{{ batchType }}</button>
             </view>
           </view>
         </scroll-view>
@@ -264,8 +262,6 @@ const buildCloudPayload = (record) => ({
   month: String(record.month || '').substring(0, 7)
 })
 const syncing = ref(false)
-// 同一次启动内只同步一次，避免不必要的云端请求（unicloud 按量计费）
-const hasSyncedOnce = ref(false)
 // 记录去重 key（云端/本机比对，避免重复上传）
 const buildRecordKey = (record) => [
   record.type,
@@ -279,12 +275,11 @@ const syncRecordsFromCloud = async () => {
   if (syncing.value) return
   syncing.value = true
   try {
-    const result = await store.loadMiscRecords()
-    if (!result.success) {
-      // 同步失败则允许下次进入再试
-      hasSyncedOnce.value = false
-      return
-    }
+    // store 层幂等：同一 App 运行期间只真正请求一次云端
+    const result = await store.ensureMiscRecordsLoaded()
+    if (!result.success) return
+    // 本次运行已同步过：直接用本机数据，不再请求云端
+    if (result.cached) return
     const cloudRecords = result.records || []
     const merged = cloudRecords.map(mapCloudRecord)
     const cloudKeys = new Set(cloudRecords.map(buildRecordKey))
@@ -305,8 +300,6 @@ const syncRecordsFromCloud = async () => {
   }
 }
 onMounted(() => {
-  if (hasSyncedOnce.value) return
-  hasSyncedOnce.value = true
   syncRecordsFromCloud()
 })
 
@@ -481,9 +474,8 @@ const normalizeItem = (desc) => String(desc || '')
   .replace(/^买|^购买|^购入|^购置|^采购/g, '')                                  // 购买词
   .trim()
 
-// 重复判定（更智能）：
-// - 报销：同月 + 同人 + 物品核心词相同 + 金额相同 → 重复
-// - 工资：同月 + 同人 + 金额相同 → 重复（每人每月只录一次）
+// 重复判定：不再看事项内容（事项写法千变万化，容易误判）
+// - 报销 / 工资：同月 + 同类型 + 同人 + 同金额 → 重复
 const buildBatchDedupKey = (type, month, name, desc, amount) => {
   const parts = [
     String(type || '').trim(),
@@ -491,7 +483,7 @@ const buildBatchDedupKey = (type, month, name, desc, amount) => {
     String(name || '').trim(),
     Number(amount) || 0
   ]
-  if (type === '报销') parts.push(normalizeItem(desc))
+  // desc 参数保留但不再参与判定（事项相同逻辑已排除）
   return parts.join('|')
 }
 
@@ -524,9 +516,6 @@ const isBatchItemDuplicate = (id, field) => {
   if (field) return !!info[field]
   return !!info.duplicateInBatch || !!info.duplicateInDatabase
 }
-
-const duplicateBatchItems = computed(() => batchItems.value.filter(item => isBatchItemDuplicate(item.id)))
-const submittableBatchItems = computed(() => batchItems.value.filter(item => !isBatchItemDuplicate(item.id)))
 
 // 按入口类型直接打开对应的批量录入（工资 / 报销），弹窗内不再切换类型
 const openBatchAdd = (type = '工资') => {
@@ -607,9 +596,6 @@ const parseBatch = () => {
     batchError.value = `第 ${invalidLine} 行解析失败，报销请写：买 1 个气阀 100 元；工资请写：张三 5200`
   }
   batchItems.value = parsed
-  if (parsed.length > 0 && duplicateBatchItems.value.length > 0) {
-    uni.showToast({ title: `检测到 ${duplicateBatchItems.value.length} 条重复，已禁止录入`, icon: 'none' })
-  }
 }
 
 // 预览行文案：报销显示 姓名 东西 金额；工资显示 姓名 金额
@@ -627,11 +613,10 @@ const removeBatchItem = (id) => {
 }
 
 const submitBatch = async () => {
-  const items = submittableBatchItems.value
+  // 允许提交全部：疑似重复只做红色提示，由用户自行判断
+  const items = batchItems.value
   if (items.length === 0) {
-    batchError.value = duplicateBatchItems.value.length > 0
-      ? '全部为重复数据，没有可录入的记录'
-      : '请先解析内容'
+    batchError.value = '请先解析内容'
     return
   }
   const payloads = items.map(item => ({
@@ -647,8 +632,6 @@ const submitBatch = async () => {
     ? res.records.map(mapCloudRecord)
     : payloads.map(p => ({ id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, ...p }))
   if (!res.success) uni.showToast({ title: res.message || '云端同步失败，已存本机', icon: 'none' })
-  // 注意：重复数必须在写入 records 之前取，否则刚录入的记录会被误判为"本月已存在"
-  const skipped = duplicateBatchItems.value.length
   records.value = [...newRecords, ...records.value]
   persist()
   if (newRecords[0]?.name) uni.setStorageSync(LAST_NAME_KEY, String(newRecords[0].name))
@@ -656,10 +639,10 @@ const submitBatch = async () => {
   batchItems.value = []
   batchError.value = ''
   uni.showToast({
-    title: skipped > 0 ? `已录入 ${newRecords.length} 条，跳过重复 ${skipped} 条` : `已录入 ${newRecords.length} 条`,
+    title: `已录入 ${newRecords.length} 条`,
     icon: 'none'
   })
-  if (skipped === 0) closeBatch()
+  closeBatch()
 }
 
 const confirmDelete = () => {

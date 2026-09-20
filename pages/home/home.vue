@@ -84,7 +84,7 @@
 	const store = useStore()
 	const {
 		state,
-		loadAllData
+		refreshAll
 	} = store
 
 	onShow(() => {
@@ -97,11 +97,15 @@
 	const userUnitPriceMap = computed(() => createUserUnitPriceMap(state.users))
 	const refreshing = ref(false)
 
+	// 点击刷新：去云端强制同步最新数据（客户 + 订单，并重置工资报销的同步标记）
 	const handleRefresh = async () => {
 		if (refreshing.value) return
 		refreshing.value = true
 		try {
-			await loadAllData()
+			const result = await refreshAll()
+			if (!result?.success) {
+				uni.showToast({ title: result?.message || '同步失败，请稍后重试', icon: 'none' })
+			}
 		} finally {
 			setTimeout(() => {
 				refreshing.value = false

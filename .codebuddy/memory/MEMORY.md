@@ -29,6 +29,13 @@
 - 远程：https://github.com/asallogm112/water-app.git，主分支 main
 - 已发布 tag：v5.0（工资报销初版）、v10.0（所有功能完善，含工资报销）
 
+## 成本约束（用户红线）
+- **uniCloud 按请求次数计费**，用户反复强调：**单人使用，本机与服务器数据 99% 一致，绝不能每次进页面都请求云端**
+- 页面级"已加载"标记（组件内 ref）**无效**（navigateTo 会重建组件）→ 必须用 **store.js 模块级幂等标记**
+- 已有幂等方法：`ensureBootstrapLoaded()` / `ensureMergeStatusList()` / `ensureMiscRecordsLoaded()`（命中缓存返回 `{success:true, cached:true}`）
+- 允许真实请求的场景：写操作后的刷新、用户主动下拉刷新、合并状态变更后
+- 用户说的"黑色加载框"= `uni.showToast` 的黑底白字提示（不是 showLoading，项目里没有 showLoading）
+
 ## 技术要点
 - **数据存储**：订单/客户/合并状态/工资报销全部走 uniCloud 云对象 `waterService`（集合：order_list、user_list、admin_list、order_merge_status、misc_record_list）；本机 storage 仅作缓存兜底
 - **⚠️ 行尾陷阱**：`index.obj.js`、`store.js` 等是**混合行尾**（CRLF+LF），`replace_in_file` 会统一成 LF 造成全文件 diff。改这类文件必须 `git checkout` 恢复后用 python 二进制插入（沿用原位行尾）

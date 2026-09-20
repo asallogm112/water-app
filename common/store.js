@@ -12,6 +12,11 @@ const SESSION_STORAGE_KEY = 'delivery_session_admin'
 let waterService = null
 let restoreSessionPromise = null
 
+// 幂等加载标记：单人使用，同一 App 运行期间不重复请求云端（uniCloud 按量计费）
+let bootstrapLoaded = false
+let mergeStatusCache = null
+let miscRecordsLoaded = false
+
 function unwrapServiceResult(rawResult) {
 	if (rawResult && typeof rawResult === 'object' && rawResult.result && typeof rawResult.result === 'object') {
 		return rawResult.result
@@ -193,6 +198,7 @@ async function getOrderMergeStatusList() {
 		success: true,
 		statuses: clonePlainData(result.statuses, [])
 	}
+	mergeStatusCache = clonePlainData(result.statuses, [])
 }
 
 async function loadMiscRecords() {
@@ -211,6 +217,7 @@ async function loadMiscRecords() {
 			success: true,
 			records: clonePlainData(result.records, [])
 		}
+		miscRecordsLoaded = true
 	} catch (error) {
 		return {
 			success: false,
@@ -321,9 +328,39 @@ async function setOrderMergeStatus(date, isMerged) {
 	return {
 		success: true,
 		date: result.date,
+	mergeStatusCache = null
 		isMerged: !!result.isMerged
 	}
 }
+
+async function ensureBootstrapLoaded() {
+	if (bootstrapLoaded) {
+		return { success: true, cached: true }
+	}
+	return loadAllData()
+}
+
+async function ensureMergeStatusList() {
+	if (mergeStatusCache) {
+		return { success: true, cached: true, statuses: clonePlainData(mergeStatusCache, []) }
+	}
+	return getOrderMergeStatusList()
+}
+
+async function ensureMiscRecordsLoaded() {
+	if (miscRecordsLoaded) {
+		return { success: true, cached: true, records: [] }
+	}
+	return loadMiscRecords()
+}
+// 用户主动点击刷新：清空幂等缓存，强制重新拉取云端数据（订单/客户，并让工资报销下次进入时重新同步）
+async function refreshAll() {
+	bootstrapLoaded = false
+	mergeStatusCache = null
+	miscRecordsLoaded = false
+	return loadAllData()
+}
+
 
 async function loadAllData() {
 	const userId = getSessionUserId()
@@ -357,6 +394,7 @@ async function loadAllData() {
 		}
 		state.orders = orderResult.orders
 		persistSessionState()
+		bootstrapLoaded = true
 		return {
 			success: true
 		}
@@ -707,6 +745,10 @@ export function useStore() {
 		getOrderMergeStatusList,
 		setOrderMergeStatus,
 		getOrderMedia,
+		ensureBootstrapLoaded,
+		ensureMergeStatusList,
+		ensureMiscRecordsLoaded,
+		refreshAll,
 		loadMiscRecords,
 		addMiscRecords,
 		updateMiscRecord,

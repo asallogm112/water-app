@@ -409,11 +409,11 @@
 	const store = useStore()
 	const {
 		state,
-		loadAllData,
+		ensureBootstrapLoaded,
 		addOrders,
 		updateOrder,
 		deleteOrder,
-		getOrderMergeStatusList,
+		ensureMergeStatusList,
 		setOrderMergeStatus,
 		getOrderMedia,
 		formatDateTime,
@@ -482,10 +482,10 @@
 		} else {
 			restoreSelectedDate()
 		}
-		// 单人使用，数据不会变化：仅首次进入加载一次，避免重复请求
+		// 单人使用：同一 App 运行期间只加载一次（store 层幂等），避免重复请求云端
 		if (!dataLoaded.value) {
 			dataLoaded.value = true
-			loadAllData()
+			ensureBootstrapLoaded()
 			loadMergeStatusMap()
 		}
 	})
@@ -551,7 +551,7 @@
 		uni.setStorageSync(ORDER_LIST_REMARK_MAP_KEY, JSON.stringify(dailyRemarkMap.value))
 	}
 	const loadMergeStatusMap = async () => {
-		const result = await getOrderMergeStatusList()
+		const result = await ensureMergeStatusList()
 		if (!result.success) return
 		dailyMergeMap.value = result.statuses.reduce((map, item) => {
 			if (item?.date) map[item.date] = !!item.isMerged
