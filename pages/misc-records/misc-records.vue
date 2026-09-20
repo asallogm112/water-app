@@ -188,7 +188,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { formatMoney } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 import { useStore } from '../../common/store.js'
@@ -253,54 +254,10 @@ const mapCloudRecord = (record) => ({
   month: String(record.month || '').substring(0, 7),
   createdAt: record.createdAt || ''
 })
-// 本地记录 → 云端入库字段
-const buildCloudPayload = (record) => ({
-  type: record.type,
-  name: record.name,
-  desc: record.desc || '',
-  amount: Number(record.amount) || 0,
-  month: String(record.month || '').substring(0, 7)
-})
-const syncing = ref(false)
-// 记录去重 key（云端/本机比对，避免重复上传）
-const buildRecordKey = (record) => [
-  record.type,
-  String(record.month || '').substring(0, 7),
-  String(record.name || ''),
-  String(record.desc || ''),
-  Number(record.amount) || 0
-].join('|')
-// 进入页面同步云端：云端为主，本机独有的历史数据自动补传云端（解决换手机/多设备数据丢失）
-const syncRecordsFromCloud = async () => {
-  if (syncing.value) return
-  syncing.value = true
-  try {
-    // store 层幂等：同一 App 运行期间只真正请求一次云端
-    const result = await store.ensureMiscRecordsLoaded()
-    if (!result.success) return
-    // 本次运行已同步过：直接用本机数据，不再请求云端
-    if (result.cached) return
-    const cloudRecords = result.records || []
-    const merged = cloudRecords.map(mapCloudRecord)
-    const cloudKeys = new Set(cloudRecords.map(buildRecordKey))
-    const localOnly = records.value.filter(r => !cloudKeys.has(buildRecordKey(r)))
-    if (localOnly.length > 0) {
-      const pushed = await store.addMiscRecords(localOnly.map(buildCloudPayload))
-      if (pushed.success && pushed.records?.length) {
-        merged.unshift(...pushed.records.map(mapCloudRecord))
-        uni.showToast({ title: `已同步 ${pushed.records.length} 条本机记录到云端`, icon: 'none' })
-      } else {
-        merged.unshift(...localOnly)
-      }
-    }
-    records.value = merged
-    persist()
-  } finally {
-    syncing.value = false
-  }
-}
-onMounted(() => {
-  syncRecordsFromCloud()
+// 页面进入不请求服务器：只从本机缓存读取
+// （数据由首页"刷新"按钮全量同步服务器后写入本机缓存）
+onShow(() => {
+  records.value = readRecords()
 })
 
 const availableMonths = computed(() => {

@@ -8,6 +8,8 @@ import {
 import { formatMoney } from './utils.js'
 
 const SESSION_STORAGE_KEY = 'delivery_session_admin'
+const MERGE_STATUS_STORAGE_KEY = 'order_merge_status_cache'
+const MISC_RECORDS_STORAGE_KEY = 'misc_records_v2'
 
 let waterService = null
 let restoreSessionPromise = null
@@ -353,13 +355,59 @@ async function ensureMiscRecordsLoaded() {
 	}
 	return loadMiscRecords()
 }
-// 用户主动点击刷新：清空幂等缓存，强制重新拉取云端数据（订单/客户，并让工资报销下次进入时重新同步）
-async function refreshAll() {
+// 用户主动点击首页刷新按钮：全量同步服务器数据（客户/订单/合并状态/工资报销）
+// 这是除登录外唯一允许请求服务器的入口；各页面进入时一律不再请求云端
+async function refreshAll(options = {}) {
 	bootstrapLoaded = false
 	mergeStatusCache = null
 	miscRecordsLoaded = false
-	return loadAllData()
+	const { skipUsers = false } = options
+	let result = { success: true }
+	if (skipUsers) {
+		// 登录流程：客户列表已由 login 接口返回，这里只重新拉订单，避免重复请求
+		const orderResult = await fetchOrderList()
+		if (orderResult.success) {
+			state.orders = orderResult.orders
+			persistSessionState()
+		}
+		result = orderResult
+	} else {
+		result = await loadAllData()
+	}
+	// 合并状态写入本机缓存（日账单页进入时直接读缓存，不请求）
+	const mergeResult = await getOrderMergeStatusList()
+	if (mergeResult?.success) {
+		try {
+			uni.setStorageSync(MERGE_STATUS_STORAGE_KEY, JSON.stringify(mergeResult.statuses || []))
+		} catch (error) {
+			// 忽略缓存写入失败
+		}
+	}
+	// 工资报销记录写入本机缓存（工资报销页进入时直接读缓存，不请求）
+	const miscResult = await loadMiscRecords()
+	if (miscResult?.success) {
+		try {
+			uni.setStorageSync(MISC_RECORDS_STORAGE_KEY, JSON.stringify((miscResult.records || []).map(mapMiscRecordForStorage)))
+		} catch (error) {
+			// 忽略缓存写入失败
+		}
+	}
+	return result
 }
+
+// 工资报销：云端记录 → 本机缓存结构
+function mapMiscRecordForStorage(record) {
+	return {
+		id: record._id || record.id,
+		type: record.type === '工资' ? '工资' : '报销',
+		name: record.name || '',
+		desc: record.desc || '',
+		amount: Number(record.amount) || 0,
+		month: String(record.month || '').substring(0, 7),
+		createdAt: record.createdAt || ''
+	}
+}
+
 
 
 async function loadAllData() {
@@ -452,15 +500,10 @@ async function loginWithPassword(userName, password) {
 			}
 		}
 		applyBootstrapData(result)
-		const orderResult = await fetchOrderList()
-		if (!orderResult.success) {
-			return {
-				success: false,
-				error: orderResult.message
-			}
-		}
-		state.orders = orderResult.orders
 		persistSessionState()
+		// 输入账号密码登录成功后：自动执行一次全量同步（等同手动点首页刷新按钮）
+		// 注意：自动登录（restoreSession）不走这里，因此不会触发刷新
+		await refreshAll({ skipUsers: true })
 		showNotification(`欢迎回来，${state.currentUser?.userName || result.user?.userName || ''}！`)
 		return {
 			success: true,

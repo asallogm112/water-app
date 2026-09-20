@@ -409,11 +409,9 @@
 	const store = useStore()
 	const {
 		state,
-		ensureBootstrapLoaded,
 		addOrders,
 		updateOrder,
 		deleteOrder,
-		ensureMergeStatusList,
 		setOrderMergeStatus,
 		getOrderMedia,
 		formatDateTime,
@@ -482,14 +480,9 @@
 		} else {
 			restoreSelectedDate()
 		}
-		// 单人使用：同一 App 运行期间只加载一次（store 层幂等），避免重复请求云端
-		if (!dataLoaded.value) {
-			dataLoaded.value = true
-			ensureBootstrapLoaded()
-			loadMergeStatusMap()
-		}
+		// 页面进入不请求服务器：数据只在首页点刷新按钮时全量同步，这里只读本机缓存
+		loadMergeStatusMap()
 	})
-	const dataLoaded = ref(false)
 	const settlementFilter = ref('all')
 	const paymentFilter = ref('all')
 	const showAdvancedFilters = ref(false)
@@ -550,13 +543,27 @@
 	const persistRemarkMap = () => {
 		uni.setStorageSync(ORDER_LIST_REMARK_MAP_KEY, JSON.stringify(dailyRemarkMap.value))
 	}
-	const loadMergeStatusMap = async () => {
-		const result = await ensureMergeStatusList()
-		if (!result.success) return
-		dailyMergeMap.value = result.statuses.reduce((map, item) => {
-			if (item?.date) map[item.date] = !!item.isMerged
-			return map
-		}, {})
+	// 合并状态只读本机缓存（首页刷新按钮同步时写入），页面进入不请求服务器
+	const MERGE_STATUS_CACHE_KEY = 'order_merge_status_cache'
+	const persistMergeStatusCache = (mapData) => {
+		try {
+			const statuses = Object.keys(mapData).map(date => ({ date, isMerged: !!mapData[date] }))
+			uni.setStorageSync(MERGE_STATUS_CACHE_KEY, JSON.stringify(statuses))
+		} catch (error) {
+			// 忽略缓存写入失败
+		}
+	}
+	const loadMergeStatusMap = () => {
+		try {
+			const raw = uni.getStorageSync(MERGE_STATUS_CACHE_KEY)
+			const statuses = raw ? JSON.parse(raw) : []
+			dailyMergeMap.value = (Array.isArray(statuses) ? statuses : []).reduce((map, item) => {
+				if (item?.date) map[item.date] = !!item.isMerged
+				return map
+			}, {})
+		} catch (error) {
+			dailyMergeMap.value = {}
+		}
 	}
 	const getSelectedDateRemark = () => String(dailyRemarkMap.value[selectedDate.value] || '')
 	const hasSelectedDateRemark = computed(() => !!getSelectedDateRemark().trim())
@@ -924,10 +931,12 @@
 					})
 					return
 				}
-				dailyMergeMap.value = {
+				const nextMap = {
 					...dailyMergeMap.value,
 					[dateKey]: true
 				}
+				dailyMergeMap.value = nextMap
+				persistMergeStatusCache(nextMap)
 			})
 			return
 		}
@@ -950,6 +959,7 @@
 					}
 					delete nextMap[dateKey]
 					dailyMergeMap.value = nextMap
+					persistMergeStatusCache(nextMap)
 				})
 			}
 		})
