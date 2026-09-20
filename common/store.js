@@ -194,11 +194,11 @@ async function getOrderMergeStatusList() {
 			statuses: []
 		}
 	}
+	mergeStatusCache = clonePlainData(result.statuses, [])
 	return {
 		success: true,
 		statuses: clonePlainData(result.statuses, [])
 	}
-	mergeStatusCache = clonePlainData(result.statuses, [])
 }
 
 async function loadMiscRecords() {
@@ -213,11 +213,11 @@ async function loadMiscRecords() {
 				records: []
 			}
 		}
+		miscRecordsLoaded = true
 		return {
 			success: true,
 			records: clonePlainData(result.records, [])
 		}
-		miscRecordsLoaded = true
 	} catch (error) {
 		return {
 			success: false,
@@ -325,10 +325,10 @@ async function setOrderMergeStatus(date, isMerged) {
 			message: formatErrorMessage(result?.message, '保存合并状态失败')
 		}
 	}
+	mergeStatusCache = null
 	return {
 		success: true,
 		date: result.date,
-	mergeStatusCache = null
 		isMerged: !!result.isMerged
 	}
 }
