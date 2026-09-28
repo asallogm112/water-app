@@ -68,7 +68,13 @@
           <view class="misc-group">
             <view class="misc-group-head">
               <text class="misc-group-title misc-group-title-0">报销</text>
-              <text class="misc-group-count">{{ reimburseRecords.length }} 条</text>
+              <view class="misc-group-right">
+                <view class="misc-sort-group">
+                  <text class="misc-sort-btn" :class="{ 'misc-sort-btn-on': reimburseSortBy === 'time' }" @tap="reimburseSortBy = 'time'">时间</text>
+                  <text class="misc-sort-btn" :class="{ 'misc-sort-btn-on': reimburseSortBy === 'amount' }" @tap="reimburseSortBy = 'amount'">金额</text>
+                </view>
+                <text class="misc-group-count">{{ reimburseRecords.length }} 条</text>
+              </view>
             </view>
             <view v-if="reimburseRecords.length === 0" class="misc-group-empty">本月暂无报销记录</view>
             <view v-for="rec in reimburseRecords" :key="rec.id" class="misc-item" @tap="openEdit(rec)">
@@ -287,7 +293,26 @@ const groupByType = (type) => monthRecords.value.filter(r => r.type === type)
 
 // 工资、报销分开显示（各自独立一块，不混排）
 const salaryRecords = computed(() => groupByType('工资'))
-const reimburseRecords = computed(() => groupByType('报销'))
+
+// 报销排序：默认按时间（最新的在前），可切换为按金额（从大到小）
+const reimburseSortBy = ref('time')
+// 记录时间：优先 createdAt，旧数据回退到本地 id 中的时间戳
+const getRecordTime = (record) => {
+  const text = String(record?.createdAt || '').trim()
+  if (text) {
+    const time = new Date(text.replace(/-/g, '/')).getTime()
+    if (Number.isFinite(time)) return time
+  }
+  const matched = String(record?.id || '').match(/^misc-(\d{13})/)
+  return matched ? Number(matched[1]) : 0
+}
+const reimburseRecords = computed(() => {
+  const list = groupByType('报销')
+  if (reimburseSortBy.value === 'amount') {
+    return [...list].sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))
+  }
+  return [...list].sort((a, b) => getRecordTime(b) - getRecordTime(a))
+})
 
 const sumByType = (type) => monthRecords.value
   .filter(r => r.type === type)
@@ -788,6 +813,10 @@ const handleExport = () => {
 .misc-group-title-0 { color: #7c3aed; }
 .misc-group-title-1 { color: #ea580c; }
 .misc-group-count { font-size: 10px; font-weight: 700; color: #94a3b8; }
+.misc-group-right { display: flex; align-items: center; gap: 8px; }
+.misc-sort-group { display: flex; align-items: center; background: #f1f5f9; border-radius: 999px; padding: 2px; }
+.misc-sort-btn { font-size: 10px; font-weight: 700; color: #64748b; padding: 3px 10px; border-radius: 999px; }
+.misc-sort-btn-on { background: #fff; color: #7c3aed; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
 .misc-group-empty { padding: 18px; text-align: center; font-size: 12px; color: #94a3b8; background: #fff; border: 1px solid #e8eef5; border-radius: 14px; }
 
 .misc-item { background: #fff; border-radius: 14px; border: 1px solid #e8eef5; box-shadow: 0 6px 16px rgba(15,23,42,0.03); padding: 12px; margin-bottom: 8px; }
