@@ -3,6 +3,7 @@ const ORDER_COLLECTION = 'order_list'
 const ADMIN_COLLECTION = 'admin_list'
 const ORDER_MERGE_COLLECTION = 'order_merge_status'
 const MISC_RECORD_COLLECTION = 'misc_record_list'
+const PAYMENT_RECORD_COLLECTION = 'payment_record_list'
 const DB_PAGE_SIZE = 500
 
 function normalizeText(value) {
@@ -390,6 +391,32 @@ function sanitizeMiscRecord(record) {
 async function loadMiscRecords(db) {
 	const data = await fetchAllCollectionData(() => db.collection(MISC_RECORD_COLLECTION))
 	return data.map(sanitizeMiscRecord).filter(Boolean)
+}
+
+function sanitizePaymentRecord(record) {
+	if (!record) return null
+	const userName = normalizeText(record.userName)
+	if (!userName) return null
+	const changeAmount = Number(record.changeAmount)
+	return {
+		_id: record._id,
+		userName,
+		orderId: normalizeText(record.orderId),
+		orderDate: normalizeText(record.orderDate),
+		beforeAmount: Number(record.beforeAmount) || 0,
+		afterAmount: Number(record.afterAmount) || 0,
+		changeAmount: Number.isFinite(changeAmount) ? Number(changeAmount.toFixed(2)) : 0,
+		paidDate: normalizeText(record.paidDate),
+		remark: normalizeText(record.remark),
+		createdAt: normalizeText(record.createdAt),
+		updatedAt: normalizeText(record.updatedAt)
+	}
+}
+
+async function loadPaymentRecords(db) {
+	const data = await fetchAllCollectionData(() => db.collection(PAYMENT_RECORD_COLLECTION)
+		.orderBy('createdAt', 'desc'))
+	return data.map(sanitizePaymentRecord).filter(Boolean)
 }
 
 function wrapServiceMethods(service) {
@@ -833,18 +860,22 @@ const serviceHandlers = {
 					}
 				}
 				const payload = applyCustomerPricing(validation.payload, customerMap)
+				// 付款记录（送水0 回桶0 实收>0）不做重复检测：客户付款可能同日多次/金额相同
+				const isPaymentPayload = (Number(payload.quantity) === 0 && Number(payload.returnedBuckets) === 0 && Number(payload.actualAmountReceived) > 0)
 				const key = buildDuplicateKey(payload)
-				if (seenKeys.has(key)) {
+				if (!isPaymentPayload && seenKeys.has(key)) {
 					duplicateOrders.push(payload)
 					continue
 				}
-				seenKeys.add(key)
+				if (!isPaymentPayload) seenKeys.add(key)
 				validPayloads.push(payload)
 			}
 			const dbDuplicateKeySet = new Set(await loadOrderDuplicateKeys(db))
 			const insertPayloads = []
 			validPayloads.forEach(payload => {
-				if (dbDuplicateKeySet.has(buildDuplicateKey(payload))) duplicateOrders.push(payload)
+				// 付款记录不参与云端去重，始终新建
+				const isPaymentPayload = (Number(payload.quantity) === 0 && Number(payload.returnedBuckets) === 0 && Number(payload.actualAmountReceived) > 0)
+				if (!isPaymentPayload && dbDuplicateKeySet.has(buildDuplicateKey(payload))) duplicateOrders.push(payload)
 				else insertPayloads.push(payload)
 			})
 			if (insertPayloads.length === 0) {
@@ -934,6 +965,28 @@ const serviceHandlers = {
 				notes: payload.notes,
 				dedup_key: payload.dedup_key
 			})
+			// 旁路记录付款流水：实收金额变化时自动写入（不改动原有更新逻辑，记录失败也不影响订单保存）
+			const beforePayment = Number(targetOrder.actualAmountReceived) || 0
+			const afterPayment = Number(payload.actualAmountReceived) || 0
+			if (beforePayment !== afterPayment) {
+				try {
+					const paymentNow = new Date()
+					await db.collection(PAYMENT_RECORD_COLLECTION).add({
+						userName: normalizeText(payload.userName) || normalizeText(targetOrder.userName),
+						orderId: targetOrderId,
+						orderDate: normalizeText(payload.createdDate) || normalizeText(targetOrder.createdDate),
+						beforeAmount: beforePayment,
+						afterAmount: afterPayment,
+						changeAmount: Number((afterPayment - beforePayment).toFixed(2)),
+						paidDate: formatDateTime(paymentNow).slice(0, 10),
+						remark: normalizeText(payload.notes),
+						createdAt: formatDateTime(paymentNow),
+						updatedAt: formatDateTime(paymentNow)
+					})
+				} catch (paymentError) {
+					// 付款流水写入失败不影响订单更新
+				}
+			}
 			return {
 				success: true
 			}
@@ -1106,7 +1159,87 @@ const serviceHandlers = {
 			}
 		}
 	},
-	async test() {
+	async getPaymentRecordList({
+		sessionUserId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const records = await loadPaymentRecords(db)
+			return {
+				success: true,
+				records
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '加载付款记录失败'
+			}
+		}
+	},
+	async deletePaymentRecord({
+		sessionUserId,
+		recordId
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const targetId = normalizeText(recordId)
+			if (!targetId) {
+				return {
+					success: false,
+					message: '记录参数不正确'
+				}
+			}
+			await db.collection(PAYMENT_RECORD_COLLECTION).doc(targetId).remove()
+			return {
+				success: true
+			}
+		} catch (error) {
+			return {
+				success: false,
+				message: error.message || '删除付款记录失败'
+			}
+		}
+	},
+		async createPaymentRecord({
+		sessionUserId,
+		userName,
+		orderId,
+		orderDate,
+		beforeAmount,
+		afterAmount,
+		changeAmount,
+		paidDate,
+		remark,
+		createdAt
+	} = {}) {
+		try {
+			const db = this.db || uniCloud.database()
+			await requireAdmin(db, sessionUserId)
+			const record = sanitizePaymentRecord({
+				userName: normalizeText(userName),
+				orderId: normalizeText(orderId),
+				orderDate: normalizeText(orderDate),
+				beforeAmount: Number(beforeAmount) || 0,
+				afterAmount: Number(afterAmount) || 0,
+				changeAmount: Number(changeAmount) || 0,
+				paidDate: normalizeText(paidDate),
+				remark: normalizeText(remark),
+				createdAt: normalizeText(createdAt) || formatDateTime(new Date()),
+				updatedAt: formatDateTime(new Date())
+			})
+			if (!record.userName) {
+				return { success: false, message: '客户姓名不能为空' }
+			}
+			const res = await db.collection(PAYMENT_RECORD_COLLECTION).add(record)
+			return { success: true, recordId: res.id }
+		} catch (error) {
+			return { success: false, message: error.message || '创建付款记录失败' }
+		}
+	},
+
+async test() {
 
 		const db = uniCloud.database();
 		const cmd = db.command;

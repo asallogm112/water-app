@@ -1,0 +1,68 @@
+{
+  "bsonType": "object",
+  "required": ["userName", "changeAmount", "createdAt"],
+  "permission": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "记录ID，系统自动生成"
+    },
+    "userName": {
+      "bsonType": "string",
+      "title": "客户名称",
+      "description": "付款的客户",
+      "trim": "both"
+    },
+    "orderId": {
+      "bsonType": "string",
+      "title": "关联订单ID",
+      "description": "本次付款对应的订单",
+      "trim": "both"
+    },
+    "orderDate": {
+      "bsonType": "string",
+      "title": "订单日期",
+      "description": "格式: YYYY-MM-DD"
+    },
+    "beforeAmount": {
+      "bsonType": "double",
+      "title": "修改前金额",
+      "description": "修改前的实收金额"
+    },
+    "afterAmount": {
+      "bsonType": "double",
+      "title": "修改后金额",
+      "description": "修改后的实收金额"
+    },
+    "changeAmount": {
+      "bsonType": "double",
+      "title": "本次变动",
+      "description": "本次付款变动金额（正数为收款，负数为减少）"
+    },
+    "paidDate": {
+      "bsonType": "string",
+      "title": "付款日期",
+      "description": "格式: YYYY-MM-DD"
+    },
+    "remark": {
+      "bsonType": "string",
+      "title": "备注",
+      "description": "订单备注，如微信转账",
+      "trim": "both"
+    },
+    "createdAt": {
+      "bsonType": "string",
+      "title": "记录时间",
+      "description": "格式: YYYY-MM-DD HH:mm:ss"
+    },
+    "updatedAt": {
+      "bsonType": "string",
+      "title": "更新时间",
+      "description": "格式: YYYY-MM-DD HH:mm:ss"
+    }
+  }
+}

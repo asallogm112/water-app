@@ -10,9 +10,12 @@
           </view>
           <view class="date-select-row">
             <view class="date-shift-btn" @tap="shiftTime(-1)"><text>{{ timeScale === 'day' ? '上一日' : '上一月' }}</text></view>
-            <picker class="date-picker-wrap" mode="selector" :range="timeScale === 'day' ? availableDays : availableMonths" :value="timeScale === 'day' ? dayIndex : monthIndex" @change="onTimeChange">
-              <view class="date-picker-display"><text>{{ timeScale === 'day' ? dayDisplayLabel : monthDisplayLabel }}</text><text class="picker-arrow">▼</text></view>
+            <picker v-if="timeScale === 'day'" class="date-picker-wrap" mode="selector" :range="availableDays" :value="dayIndex" @change="onTimeChange">
+              <view class="date-picker-display"><text>{{ dayDisplayLabel }}</text><text class="picker-arrow">▼</text></view>
             </picker>
+            <view v-else class="date-picker-wrap" @tap="showMonthModal = true">
+              <view class="date-picker-display"><text>{{ monthDisplayLabel }}</text><text class="picker-arrow">▼</text></view>
+            </view>
             <view class="date-shift-btn" :class="{ 'date-shift-btn-disabled': timeScale === 'day' ? isNextDayDisabled : isNextMonthDisabled }" @tap="shiftTime(1)"><text>{{ timeScale === 'day' ? '下一日' : '下一月' }}</text></view>
           </view>
         </view>
@@ -63,7 +66,7 @@
                   <view class="lb-money-line"><text class="lb-money-label">应付</text><text class="lb-money-val">¥{{ formatMoney(item.payable) }}</text></view>
                   <view class="lb-money-line"><text class="lb-money-label">待付</text><text class="lb-money-val" :class="item.unpaid === 0 ? 'lb-money-paid' : 'lb-money-unpaid'">¥{{ formatMoney(item.unpaid) }}</text></view>
                 </view>
-                <text class="lb-remark-btn" @tap.stop="openRemarkModal(item.userName)">备注</text>
+                <view class="customer-copy-btn lb-remark-btn" @tap.stop="openRemarkModal(item.userName)"><text class="customer-copy-btn-text">备注</text></view>
               </view>
               <!-- 备注内容（有才显示） -->
               <view v-if="getCustomerRemark(item.userName)" class="lb-remark-notes">
@@ -76,6 +79,42 @@
       </view>
     </scroll-view>
 
+    <!-- 选择月份弹窗（与按人对账/付款记录一致，第一项即"全部月份"） -->
+    <view v-if="showMonthModal" class="editor-mask editor-mask-centered" @tap="showMonthModal = false" @touchmove.stop.prevent>
+      <view class="editor-modal customer-select-modal" @tap.stop @touchmove.stop>
+        <view class="editor-header">
+          <view>
+            <text class="editor-title">选择月份</text>
+          </view>
+          <text class="editor-close" @tap="showMonthModal = false">关闭</text>
+        </view>
+        <scroll-view class="customer-select-list" scroll-y @touchmove.stop>
+          <view
+            class="customer-select-item"
+            :class="{ 'customer-select-item-active': activeMonth === 'ALL' }"
+            @tap="selectMonth('ALL')"
+          >
+            <view class="customer-select-main">
+              <text class="customer-select-name">全部月份</text>
+            </view>
+            <text v-if="activeMonth === 'ALL'" class="customer-select-check">已选</text>
+          </view>
+          <view
+            v-for="month in availableMonths"
+            :key="month"
+            class="customer-select-item"
+            :class="{ 'customer-select-item-active': activeMonth === month }"
+            @tap="selectMonth(month)"
+          >
+            <view class="customer-select-main">
+              <text class="customer-select-name">{{ month.replace('-', '年') }}月</text>
+            </view>
+            <text v-if="activeMonth === month" class="customer-select-check">已选</text>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+
     <!-- 客户订单明细弹窗 -->
     <view v-if="showOrdersModal" class="editor-mask" @tap="closeOrdersModal" @touchmove.stop.prevent>
       <view class="editor-modal" @tap.stop @touchmove.stop>
@@ -84,26 +123,61 @@
             <text class="editor-title">{{ activeCustomerName }} 订单明细</text>
             <text class="editor-subtitle">{{ activeOrdersPeriod }} · 共 {{ activeCustomerOrders.length }} 笔</text>
           </view>
-          <text class="editor-close" @tap="closeOrdersModal">关闭</text>
+          <view class="editor-header-actions">
+            <view class="customer-copy-btn" @tap="openCustomerPayments"><text class="customer-copy-btn-text">付款记录</text></view>
+            <text class="editor-close" @tap="closeOrdersModal">关闭</text>
+          </view>
         </view>
         <scroll-view class="orders-body" scroll-y @touchmove.stop>
           <view v-for="(ord, i) in activeCustomerOrders" :key="i" class="order-row">
             <view class="order-row-head">
               <text class="order-row-date">{{ ord.createdDate }}</text>
-              <view class="order-row-head-right">
-                <text class="order-row-amount">应收 ¥{{ formatMoney(ord.receivable) }}</text>
-                <text v-if="canManageData" class="order-row-edit-btn" @tap.stop="openOrderEditModal(ord)">编辑</text>
-              </view>
+              <view v-if="canManageData" class="customer-copy-btn order-row-edit-btn" @tap.stop="openOrderEditModal(ord)"><text class="customer-copy-btn-text">编辑</text></view>
             </view>
             <view class="order-row-grid">
-              <text class="order-row-cell">发水 {{ ord.quantity }} 桶</text>
-              <text class="order-row-cell">回桶 {{ ord.returnedBuckets }} 个</text>
-              <text class="order-row-cell">单价 ¥{{ formatMoney(ord.unitPrice) }}</text>
-              <text class="order-row-cell" :class="{ 'order-row-purple': Number(ord.receivable) !== Number(ord.paid) }">实收 ¥{{ formatMoney(ord.paid) }}</text>
+              <text class="order-row-cell">发水 <text class="order-row-cell-strong">{{ ord.quantity }}</text> 桶</text>
+              <text class="order-row-cell">回桶 <text class="order-row-cell-strong">{{ ord.returnedBuckets }}</text> 个</text>
+              <text class="order-row-cell">应收 <text class="order-row-cell-amount-red">¥{{ formatMoney(ord.receivable) }}</text></text>
+              <text class="order-row-cell">实收 <text class="order-row-cell-amount" :class="{ 'order-row-cell-amount-red': Number(ord.receivable) !== Number(ord.paid) }">¥{{ formatMoney(ord.paid) }}</text></text>
             </view>
-            <text v-if="ord.notes" class="order-row-notes">备注：{{ ord.notes }}</text>
+            <view v-if="ord.notes" class="lb-remark-notes"><text>备注: {{ ord.notes }}</text></view>
           </view>
           <view v-if="activeCustomerOrders.length === 0" class="orders-empty"><text>暂无订单</text></view>
+        </scroll-view>
+      </view>
+    </view>
+
+    <!-- 该客户的付款记录弹窗（数据来自本机付款记录缓存，与「付款记录」页一致） -->
+    <view v-if="showCustomerPaymentsModal" class="editor-mask" @tap="showCustomerPaymentsModal = false" @touchmove.stop.prevent>
+      <view class="editor-modal" @tap.stop @touchmove.stop>
+        <view class="editor-header">
+          <view>
+            <text class="editor-title">{{ activeCustomerName }} 付款记录</text>
+            <text class="editor-subtitle">共 {{ customerPaymentRecords.length }} 笔 · 合计 ¥{{ formatMoney(customerPaymentTotal) }}</text>
+          </view>
+          <text class="editor-close" @tap="showCustomerPaymentsModal = false">关闭</text>
+        </view>
+        <scroll-view class="orders-body" scroll-y @touchmove.stop>
+          <view v-if="customerPaymentRecords.length === 0" class="orders-empty">
+            <text>暂无付款记录</text>
+            <text class="orders-empty-hint">数据来自云端，请先在首页点「刷新」同步</text>
+          </view>
+          <view v-for="rec in customerPaymentRecords" :key="rec.id" class="payment-row">
+            <view class="payment-row-head">
+              <text class="payment-row-time">{{ rec.createdAt || rec.paidDate || '' }}</text>
+              <view class="payment-row-head-right">
+                <text class="payment-row-amount" :class="Number(rec.changeAmount) >= 0 ? 'text-emerald' : 'text-receivable'">
+                  {{ Number(rec.changeAmount) >= 0 ? '+' : '-' }}¥{{ formatMoney(Math.abs(Number(rec.changeAmount) || 0)) }}
+                </text>
+                <text class="payment-row-delete" @tap.stop="confirmDeletePayment(rec)">🗑</text>
+              </view>
+            </view>
+            <view class="payment-row-body">
+              <text class="payment-row-order">订单 {{ rec.orderDate || '-' }}</text>
+              <text class="payment-row-change">¥{{ formatMoney(rec.beforeAmount) }} → ¥{{ formatMoney(rec.afterAmount) }}</text>
+            </view>
+            <view v-if="rec.remark" class="payment-row-remark">备注：{{ rec.remark }}</view>
+          </view>
         </scroll-view>
       </view>
     </view>
@@ -182,7 +256,7 @@ import { createUserUnitPriceMap, formatMoney, getOrderReceivableAmount, getOrder
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 
 const store = useStore()
-const { state, updateOrder, deleteOrder } = store
+const { state, updateOrder, deleteOrder, deletePaymentRecord } = store
 
 // 编辑权限：与按人对账一致，仅指定账号可编辑
 const canManageData = computed(() => state.currentUser?.userName === 'chen')
@@ -212,6 +286,8 @@ const CALENDAR_START_MONTH = '2000-01'
 
 // 与「按人对账」页面共用的人员备注
 const CUSTOMER_REMARK_MAP_KEY = 'user_monthly_customer_month_remark_map'
+// 付款记录本机缓存（与「付款记录」页共用同一个 key）
+const PAYMENT_RECORDS_STORAGE_KEY = 'payment_record_cache'
 const remarkMap = ref({})
 const showRemarkModal = ref(false)
 const remarkTargetName = ref('')
@@ -277,16 +353,28 @@ const availableMonths = computed(() => buildMonthRange(CALENDAR_START_MONTH, cur
 const activeDay = computed(() => selectedDay.value || (availableDays.value[0] || today.value))
 const activeMonth = computed(() => selectedMonth.value || (availableMonths.value[0] || currentMonth.value))
 const dayIndex = computed(() => Math.max(0, availableDays.value.indexOf(activeDay.value)))
-const monthIndex = computed(() => Math.max(0, availableMonths.value.indexOf(activeMonth.value)))
+// 月份下拉选项：第一项固定为"全部月份"
+const monthOptions = computed(() => ['全部月份', ...availableMonths.value])
+const monthIndex = computed(() => {
+  if (activeMonth.value === 'ALL') return 0
+  const idx = availableMonths.value.indexOf(activeMonth.value)
+  return idx >= 0 ? idx + 1 : 0
+})
 const dayDisplayLabel = computed(() => activeDay.value)
-const monthDisplayLabel = computed(() => activeMonth.value.replace('-', '年') + '月')
+const monthDisplayLabel = computed(() => activeMonth.value === 'ALL' ? '全部月份' : activeMonth.value.replace('-', '年') + '月')
 
-// 备注按月份存取，与「按人对账」页面保持一致
-const activeRemarkMonth = computed(() => timeScale.value === 'day' ? activeDay.value.substring(0, 7) : activeMonth.value)
-const activeOrdersPeriod = computed(() => timeScale.value === 'day' ? activeDay.value : activeMonth.value)
+// 备注按月份存取，与「按人对账」页面保持一致（"全部月份"时按当前月存取）
+const activeRemarkMonth = computed(() => {
+  if (timeScale.value === 'day') return activeDay.value.substring(0, 7)
+  return activeMonth.value === 'ALL' ? currentMonth.value : activeMonth.value
+})
+const activeOrdersPeriod = computed(() => {
+  if (timeScale.value === 'day') return activeDay.value
+  return activeMonth.value === 'ALL' ? '全部月份' : activeMonth.value
+})
 
 const isNextDayDisabled = computed(() => activeDay.value >= today.value)
-const isNextMonthDisabled = computed(() => activeMonth.value >= currentMonth.value)
+const isNextMonthDisabled = computed(() => activeMonth.value === 'ALL' || activeMonth.value >= currentMonth.value)
 
 const parseMonthString = (value) => {
   const parts = String(value || '').split('-').map(Number)
@@ -295,8 +383,9 @@ const parseMonthString = (value) => {
 }
 
 const onTimeChange = (e) => {
-  if (timeScale.value === 'day') selectedDay.value = availableDays.value[e.detail.value]
-  else selectedMonth.value = availableMonths.value[e.detail.value]
+  const val = Number(e.detail.value)
+  if (timeScale.value === 'day') selectedDay.value = availableDays.value[val]
+  else selectedMonth.value = val === 0 ? 'ALL' : availableMonths.value[val - 1]
 }
 
 const shiftTime = (offset) => {
@@ -309,6 +398,11 @@ const shiftTime = (offset) => {
     return
   }
   if (offset > 0 && isNextMonthDisabled.value) return
+  // "全部月份"时点上一月 → 回到最新月份
+  if (activeMonth.value === 'ALL') {
+    selectedMonth.value = availableMonths.value[0] || currentMonth.value
+    return
+  }
   const parsed = parseMonthString(activeMonth.value)
   if (!parsed) return
   const baseDate = new Date(parsed.year, parsed.month - 1, 1)
@@ -330,6 +424,8 @@ watch([timeScale, selectedDay, selectedMonth], () => {
 
 const scaleFilteredOrders = computed(() => roleFilteredOrders.value.filter(o => {
   if (timeScale.value === 'day') return o.createdDate === activeDay.value
+  // "全部月份"：不限月份，统计所有订单
+  if (activeMonth.value === 'ALL') return !!o.createdDate
   return o.createdDate && o.createdDate.startsWith(activeMonth.value)
 }))
 
@@ -360,7 +456,8 @@ const leaderboardData = computed(() => {
 // 导出：单表，先是汇总数据，下面直接接客户明细（所有金额红色字体）
 const statsSheetName = () => {
   const isDay = timeScale.value === 'day'
-  return isDay ? `${activeDay.value} 账单表` : `${activeMonth.value} 账单表`
+  if (isDay) return `${activeDay.value} 账单表`
+  return activeMonth.value === 'ALL' ? '全部月份 账单表' : `${activeMonth.value} 账单表`
 }
 
 const getCellDisplayLength = (cell) => {
@@ -386,7 +483,7 @@ const calcAutoWidths = (rows, columnCount) => {
 
 const buildBillSheetRows = () => {
   const isDay = timeScale.value === 'day'
-  const periodLabel = isDay ? activeDay.value : activeMonth.value
+  const periodLabel = isDay ? activeDay.value : (activeMonth.value === 'ALL' ? '全部月份' : activeMonth.value)
 
   // 汇总区（金额用红色）
   const sumRows = [
@@ -536,6 +633,71 @@ const closeOrdersModal = () => {
   activeCustomerOrders.value = []
 }
 
+// 月份选择弹窗（与按人对账/付款记录同款，第一项即"全部月份"）
+const showMonthModal = ref(false)
+const selectMonth = (month) => {
+  selectedMonth.value = month || 'ALL'
+  showMonthModal.value = false
+}
+
+// 该客户的付款记录：读本机缓存（页面进入不请求服务器），按时间倒序
+const showCustomerPaymentsModal = ref(false)
+const customerPaymentRecords = ref([])
+const readPaymentRecordsFromCache = () => {
+  try {
+    const raw = uni.getStorageSync(PAYMENT_RECORDS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return Array.isArray(parsed) ? parsed : []
+  } catch (error) {
+    return []
+  }
+}
+const openCustomerPayments = () => {
+  const targetName = String(activeCustomerName.value || '').trim()
+  customerPaymentRecords.value = readPaymentRecordsFromCache()
+    .filter(item => String(item.userName || '').trim() === targetName)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+  showCustomerPaymentsModal.value = true
+}
+const customerPaymentTotal = computed(() =>
+  customerPaymentRecords.value.reduce((sum, item) => sum + Number(item.changeAmount || 0), 0)
+)
+
+// 删除后同步更新本机缓存（付款记录页/按人对账共用同一份缓存）
+const removePaymentRecordFromCache = (id) => {
+  try {
+    const raw = uni.getStorageSync(PAYMENT_RECORDS_STORAGE_KEY)
+    const list = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : []
+    const next = (Array.isArray(list) ? list : []).filter(item => String(item._id || item.id) !== String(id))
+    uni.setStorageSync(PAYMENT_RECORDS_STORAGE_KEY, JSON.stringify(next))
+  } catch (error) {
+    // 忽略缓存写入失败
+  }
+}
+
+// 删除付款记录（二次确认）
+const confirmDeletePayment = (rec) => {
+  uni.showModal({
+    title: '删除付款记录',
+    content: `确认删除「${rec.userName || ''} ${Number(rec.changeAmount) >= 0 ? '+' : '-'}¥${formatMoney(Math.abs(Number(rec.changeAmount) || 0))}」这条记录吗？`,
+    confirmText: '删除',
+    confirmColor: '#dc2626',
+    cancelText: '取消',
+    success: async ({ confirm }) => {
+      if (!confirm) return
+      const res = await deletePaymentRecord(rec.id)
+      if (!res?.success) {
+        uni.showToast({ title: res?.message || '删除失败', icon: 'none' })
+        return
+      }
+      customerPaymentRecords.value = customerPaymentRecords.value.filter(item => item.id !== rec.id)
+      removePaymentRecordFromCache(rec.id)
+      uni.showToast({ title: '已删除', icon: 'none' })
+    }
+  })
+}
+
 // 打开编辑弹窗
 const openOrderEditModal = (order) => {
   if (!canManageData.value) return
@@ -661,9 +823,35 @@ const confirmOrderDelete = () => {
 .lb-money-val{font-size:13px;font-weight:900;color:#1e293b;font-family:monospace}
 .lb-money-unpaid{color:#dc2626}
 .lb-money-paid{color:#059669}
-.lb-remark-btn{font-size:11px;font-weight:700;color:#7c3aed;background:#fff;border:1px solid #ddd6fe;padding:3px 10px;border-radius:10px;flex-shrink:0}
+.lb-remark-btn{flex-shrink:0}
 /* 备注内容 */
 .lb-remark-notes{margin-top:8px;padding:6px 8px;background:rgba(241,245,249,0.7);border-radius:8px;font-size:12px;color:#f87171;word-break:break-all;line-height:1.5}
+
+/* 弹窗头部按钮组 / 月份选择弹窗（与按人对账、付款记录同款） */
+.editor-header-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.editor-mask-centered{align-items:flex-start}
+.customer-select-modal{max-width:420px}
+.customer-select-list{max-height:min(60vh,420px)}
+.customer-select-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 4px;border-bottom:1px solid #f1f5f9}
+.customer-select-item-active{color:#059669}
+.customer-select-main{min-width:0;display:flex;flex-direction:column}
+.customer-select-name{font-size:14px;font-weight:700;color:inherit}
+.customer-select-check{flex-shrink:0;font-size:11px;font-weight:700;color:#059669;background:#ecfdf5;padding:4px 10px;border-radius:999px}
+
+/* 客户付款记录行（与「按人对账」的付款记录列表完全一致） */
+.payment-row{padding:10px 12px;background:#f8fafc;border:1px solid #e8eef5;border-radius:12px;margin-bottom:8px}
+.payment-row-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.payment-row-time{font-size:11px;font-weight:700;color:#64748b;font-family:monospace}
+.payment-row-amount{font-size:14px;font-weight:900;font-family:monospace}
+.payment-row-body{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+.payment-row-order{font-size:11px;color:#475569;font-family:monospace}
+.payment-row-change{font-size:11px;color:#64748b;font-family:monospace}
+.payment-row-foot{display:flex;align-items:center;gap:8px;margin-top:6px}
+.payment-row-remark{font-size:11px;color:#a78bfa;word-break:break-all;flex:1;min-width:0}
+.payment-row-head-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.payment-row-delete{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#fff1f2;border:1px solid #fecdd3;border-radius:50%;font-size:13px;line-height:1}
+.text-emerald{color:#059669}
+.orders-empty-hint{display:block;margin-top:6px;font-size:11px;color:#94a3b8}
 
 .editor-mask{position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:120;display:flex;align-items:flex-start;justify-content:center;padding:20px 20px 24px;box-sizing:border-box}
 .editor-modal{width:100%;max-width:560px;max-height:calc(100vh - 64px);background:#fff;border-radius:24px;padding:18px 16px 16px;border:1px solid rgba(226,232,240,.9);box-shadow:0 24px 60px rgba(15,23,42,.24);box-sizing:border-box;display:flex;flex-direction:column}
@@ -673,16 +861,15 @@ const confirmOrderDelete = () => {
 .editor-subtitle{display:block;font-size:10px;color:#94a3b8;margin-top:4px}
 .editor-close{font-size:11px;font-weight:800;color:#059669;background:#ecfdf5;padding:7px 12px;border-radius:999px;flex-shrink:0}
 .orders-body{max-height:calc(100vh - 220px);box-sizing:border-box}
-.order-row{padding:10px 12px;background:#f8fafc;border:1px solid #e8eef5;border-radius:12px;margin-bottom:8px}
+.order-row{padding:12px 14px;background:#f8fafc;border:1px solid #e8eef5;border-radius:14px;margin-bottom:10px}
 .order-row-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.order-row-head-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.order-row-date{font-size:11px;font-weight:800;color:#1e293b;font-family:monospace}
-.order-row-amount{font-size:12px;font-weight:800;color:#dc2626;font-family:monospace}
-.order-row-edit-btn{font-size:10px;font-weight:700;color:#334155;background:#fff;border:1px solid #dbe4ee;border-radius:8px;padding:2px 10px;flex-shrink:0}
-.order-row-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 8px;margin-top:6px}
-.order-row-cell{font-size:10px;color:#475569;font-family:monospace}
-.order-row-purple{color:#8b5cf6;font-weight:700}
-.order-row-notes{display:block;font-size:10px;color:#8b5cf6;margin-top:6px;word-break:break-all}
+.order-row-date{font-size:12px;font-weight:800;color:#1e293b;font-family:monospace}
+.order-row-edit-btn{flex-shrink:0}
+.order-row-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;margin-top:10px}
+.order-row-cell{font-size:12px;font-weight:700;color:#64748b}
+.order-row-cell-strong{font-weight:800;color:#1e293b}
+.order-row-cell-amount{font-weight:800;color:#1e293b;font-family:monospace}
+.order-row-cell-amount-red{font-weight:800;color:#dc2626;font-family:monospace}
 /* 编辑订单弹窗 */
 .order-edit-body{max-height:calc(100vh - 280px);box-sizing:border-box}
 .order-edit-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}

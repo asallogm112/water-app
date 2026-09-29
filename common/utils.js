@@ -289,6 +289,8 @@ export function normalizeRecognizedOrderText(text) {
   normalized = normalized.replace(/(送水|回桶|退桶|付款|实收|收款|扫码付|金额)/g, ' $1 ')
   normalized = normalized.replace(/(送|回|退|付|收|扫码)(\d)/g, '$1 $2')
   normalized = normalized.replace(/([\u4e00-\u9fa5A-Za-z]+)(\d+(?:\/\d+){1,2})/g, '$1 $2')
+  // 把「数字 与 斜杠 之间的任意空格」紧凑成 数字/数字，支持 100 / 100、100 /100、100/ 100 等变体
+  normalized = normalized.replace(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, '$1/$2')
   normalized = normalized.replace(/(\d+(?:\.\d+)?)(桶|元|块|号|日)/g, '$1 $2 ')
   normalized = normalized.replace(/(桶|元|块|号|日)([\u4e00-\u9fa5A-Za-z])/g, '$1 $2')
   normalized = normalized.replace(/(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日|号)?)([\u4e00-\u9fa5A-Za-z])/g, '$1\n$2')
@@ -306,6 +308,7 @@ export function parseCompactOrderSegments(text) {
     .replace(/[，,；;。]/g, ' ')
     .replace(/(\d)\.(?=\s|$)/g, '$1 ')
     .replace(/([\u4e00-\u9fa5A-Za-z]+)(\d+(?:\/\d+){1,2})/g, '$1 $2')
+    .replace(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g, '$1/$2')
     .replace(/(送水|送|回桶|回|退桶|退|付款|付|实收|收款|收|扫码付|扫码|金额)(\d+(?:\.\d+)?)/g, '$1 $2')
     .replace(/(\d+(?:\.\d+)?)(桶|元|块)/g, '$1 $2')
     .replace(/\s+/g, ' ')
@@ -431,6 +434,10 @@ export function parseCompactOrderSegments(text) {
 export function isPotentialName(token, systemUserNames = []) {
   const clean = token.replace(/[\(\)（）:,，：]/g, '').trim()
   if (!clean) return false
+
+  // 名字必须包含汉字或字母；纯符号（如 "/"、"-"）不能当作客户名，
+  // 否则 "100 / 100" 里的斜杠会被误判为名字，导致解析失败
+  if (!/[\u4e00-\u9fa5A-Za-z]/.test(clean)) return false
 
   if (systemUserNames.some(u => u.toLowerCase() === clean.toLowerCase())) {
     return true

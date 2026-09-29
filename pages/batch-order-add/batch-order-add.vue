@@ -71,7 +71,7 @@
               </view>
               <view class="result-delete-btn" @tap="handleDeleteRow(item.id)">删除</view>
             </view>
-            <button class="result-submit-btn" :class="{ 'btn-disabled': submittableItems.length === 0 }" :disabled="submittableItems.length === 0" @tap="handleSubmitBatch">提交这 {{ submittableItems.length }} 笔订单</button>
+            <button class="result-submit-btn" :class="{ 'btn-disabled': submittableItems.length === 0 || submitting }" @tap="handleSubmitBatch">{{ submitBtnText }}</button>
           </view>
         </view>
 
@@ -488,16 +488,28 @@ const toggleItemExpanded = (id) => {
 
 const handleDeleteRow = (id) => { items.value = items.value.filter(item => item.id !== id) }
 
+// 提交中状态：防重复点击，并让用户明确知道点击已生效
+// 注意：不使用 <button :disabled>——安卓上该属性从禁用切回可用后，按钮可能仍无法点击
+const submitting = ref(false)
+const submitBtnText = computed(() => submitting.value ? '提交中，请稍候…' : `提交这 ${submittableItems.value.length} 笔订单`)
+// 统一错误反馈：页面顶部横幅 + 屏幕 toast（提交按钮在页面底部，单靠顶部横幅用户可能看不到）
+const notifySubmitError = (message) => {
+  error.value = message
+  uni.showToast({ title: message, icon: 'none', duration: 3000 })
+}
+
 const handleSubmitBatch = async () => {
+  if (submitting.value) return
   error.value = ''
-  if (items.value.length === 0) { error.value = '当前没有可提交的订单'; return }
-  if (items.value.some(i => !i.userName.trim())) { error.value = '所有订单均必须填写客户姓名'; return }
+  if (items.value.length === 0) { notifySubmitError('当前没有可提交的订单'); return }
+  if (submittableItems.value.length === 0) { notifySubmitError('解析结果全部是重复数据，没有可提交的订单'); return }
+  if (items.value.some(i => !String(i.userName || '').trim())) { notifySubmitError('所有订单均必须填写客户姓名'); return }
   const invalidIndex = items.value.findIndex(item => {
     const dateValid = /^\d{4}-\d{2}-\d{2}$/.test((item.customDate || '').trim())
     return !dateValid || !Number.isInteger(Number(item.quantity)) || Number(item.quantity) < 0 || !Number.isInteger(Number(item.returnedBuckets)) || Number(item.returnedBuckets) < 0 || Number(item.unitPrice) < 0 || Number(item.actualAmountReceived) < 0
   })
   if (invalidIndex !== -1) {
-    error.value = `第 ${invalidIndex + 1} 行存在无效数据：送水数允许为 0，但不能小于 0；请同时检查日期、回桶数、单价和实收金额`
+    notifySubmitError(`第 ${invalidIndex + 1} 行存在无效数据：送水数允许为 0，但不能小于 0；请同时检查日期、回桶数、单价和实收金额`)
     return
   }
 
@@ -530,25 +542,38 @@ const finalOrders = submittableItems.value.map((item, index) => {
   })
 
   if (finalOrders.length === 0) {
-    error.value = '解析结果全部是重复数据，没有可提交的订单'
+    notifySubmitError('解析结果全部是重复数据，没有可提交的订单')
     return
   }
 
-  const result = await addOrders(finalOrders)
-  if (!result?.success) {
-    error.value = result?.message || '批量保存失败，请稍后重试'
-    if (result?.code === 'DUPLICATE_ORDER' && Array.isArray(result.duplicateOrders) && result.duplicateOrders.length > 0) {
-      await showDuplicateAlert(result.duplicateOrders, [])
+  submitting.value = true
+  try {
+    const result = await addOrders(finalOrders)
+    if (!result?.success) {
+      const message = result?.message || '批量保存失败，请稍后重试'
+      error.value = message
+      if (result?.code === 'DUPLICATE_ORDER' && Array.isArray(result.duplicateOrders) && result.duplicateOrders.length > 0) {
+        await showDuplicateAlert(result.duplicateOrders, [])
+      } else {
+        uni.showToast({ title: message, icon: 'none', duration: 3000 })
+      }
+      return
     }
-    return
+    successCount.value = Number(result.addedCount || result.count || finalOrders.length) || 0
+    skippedCount.value = 0
+    submittedOrders.value = finalOrders
+    skippedDuplicateOrders.value = []
+    items.value = []
+    success.value = true
+    uni.showToast({ title: `已提交 ${successCount.value} 笔订单`, icon: 'none', duration: 2000 })
+    setTimeout(() => { success.value = false }, 1500)
+  } catch (submitError) {
+    const message = submitError?.message || String(submitError || '提交失败')
+    error.value = `提交失败：${message}`
+    uni.showToast({ title: '提交失败，请重试', icon: 'none', duration: 3000 })
+  } finally {
+    submitting.value = false
   }
-  successCount.value = Number(result.addedCount || result.count || finalOrders.length) || 0
-  skippedCount.value = 0
-  submittedOrders.value = finalOrders
-  skippedDuplicateOrders.value = []
-  items.value = []
-  success.value = true
-  setTimeout(() => { success.value = false }, 1500)
 }
 </script>
 

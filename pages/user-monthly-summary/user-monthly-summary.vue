@@ -42,10 +42,10 @@
         <!-- 选中客户卡片 -->
         <view v-if="selectedCustomerObj" class="card customer-card">
           <view class="customer-card-top">
-            <view>
-              <text class="customer-name">{{ selectedCustomerObj.userName }}</text>
-            </view>
             <view v-if="canManageData" class="customer-action-group">
+              <view class="customer-copy-btn" @tap="openPaymentRecordModal">
+                <text class="customer-copy-btn-text">付款记录</text>
+              </view>
               <view class="customer-copy-btn" :class="{ 'customer-copy-btn-active': hasCustomerRemark }" @tap="openCustomerRemarkModal">
                 <text class="customer-copy-btn-text">备注</text>
               </view>
@@ -310,7 +310,7 @@
               </view>
               <view class="batch-result-delete-btn" @tap="deleteBatchAddRow(item.id)">删除</view>
             </view>
-            <button class="batch-result-submit-btn" :class="{ 'btn-disabled': batchAddItems.length === 0 }" :disabled="batchAddItems.length === 0" @tap="submitBatchAddOrders">提交这 {{ batchAddItems.length }} 笔订单</button>
+            <button class="batch-result-submit-btn" :class="{ 'btn-disabled': batchAddItems.length === 0 }" :disabled="batchAddItems.length === 0" @tap="submitBatchAddOrders">{{ submitting ? '提交中，请稍候…' : '提交这 ' + batchAddItems.length + ' 笔订单' }}</button>
           </view>
         </scroll-view>
       </view>
@@ -349,6 +349,38 @@
           </view>
           <view v-if="filteredCustomerList.length === 0" class="customer-select-empty">
             <text>没有匹配的人员</text>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+
+    <!-- 付款记录明细弹窗（本机缓存，不请求服务器） -->
+    <view v-if="showPaymentRecordModal" class="editor-mask" @tap="closePaymentRecordModal" @touchmove.stop.prevent>
+      <view class="editor-modal" @tap.stop @touchmove.stop>
+        <view class="editor-header">
+          <view>
+            <text class="editor-title">付款记录</text>
+            <text class="editor-subtitle">{{ activeCustomerDisplayName }} · 共 {{ customerPaymentRecords.length }} 笔</text>
+          </view>
+          <text class="editor-close" @tap="closePaymentRecordModal">关闭</text>
+        </view>
+        <scroll-view class="editor-body" scroll-y @touchmove.stop>
+          <view v-if="customerPaymentRecords.length === 0" class="orders-empty">暂无付款记录</view>
+          <view v-for="rec in customerPaymentRecords" :key="rec.id" class="payment-row">
+            <view class="payment-row-head">
+              <text class="payment-row-time">{{ rec.createdAt || rec.paidDate || '' }}</text>
+              <view class="payment-row-head-right">
+                <text class="payment-row-amount" :class="Number(rec.changeAmount) >= 0 ? 'text-emerald' : 'text-receivable'">
+                  {{ Number(rec.changeAmount) >= 0 ? '+' : '-' }}¥{{ formatMoney(Math.abs(Number(rec.changeAmount) || 0)) }}
+                </text>
+                <text class="payment-row-delete" @tap.stop="confirmDeletePayment(rec)">✕</text>
+              </view>
+            </view>
+            <view class="payment-row-body">
+              <text class="payment-row-order">订单 {{ rec.orderDate || '-' }}</text>
+              <text class="payment-row-change">¥{{ formatMoney(rec.beforeAmount) }} → ¥{{ formatMoney(rec.afterAmount) }}</text>
+            </view>
+            <view v-if="rec.remark" class="payment-row-remark">备注：{{ rec.remark }}</view>
           </view>
         </scroll-view>
       </view>
@@ -417,7 +449,7 @@ import { createUserUnitPriceMap, formatMoney, getOrderUnitPrice, getOrderReceiva
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 
 const store = useStore()
-const { state, addOrder, addOrders, updateOrder, deleteOrder, formatBeijingDateTime, formatDate } = store
+const { state, addOrder, addOrders, updateOrder, deleteOrder, deletePaymentRecord, createPaymentRecord, formatBeijingDateTime, formatDate } = store
 const canManageData = computed(() => state.currentUser?.userName === 'chen')
 const userUnitPriceMap = computed(() => createUserUnitPriceMap(state.users))
 const CALENDAR_START_MONTH = '2000-01'
@@ -604,6 +636,83 @@ const closeCustomerModal = () => {
 const selectCustomer = (userName) => {
   selectedUser.value = userName
   closeCustomerModal()
+}
+
+// ---------- 付款记录明细（读本机缓存，页面进入不请求服务器）----------
+const PAYMENT_RECORDS_STORAGE_KEY = 'payment_record_cache'
+const paymentRecords = ref([])
+const showPaymentRecordModal = ref(false)
+
+const readPaymentRecords = () => {
+  try {
+    const raw = uni.getStorageSync(PAYMENT_RECORDS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return []
+    return parsed.map(item => ({
+      id: item._id || item.id,
+      userName: String(item.userName || ''),
+      orderDate: String(item.orderDate || ''),
+      beforeAmount: Number(item.beforeAmount) || 0,
+      afterAmount: Number(item.afterAmount) || 0,
+      changeAmount: Number(item.changeAmount) || 0,
+      paidDate: String(item.paidDate || ''),
+      remark: String(item.remark || ''),
+      createdAt: String(item.createdAt || '')
+    }))
+  } catch (error) {
+    return []
+  }
+}
+
+const customerPaymentRecords = computed(() => {
+  const name = String(activeCustomerDisplayName.value || '')
+  return paymentRecords.value
+    .filter(record => record.userName === name)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+})
+
+const openPaymentRecordModal = () => {
+  paymentRecords.value = readPaymentRecords()
+  showPaymentRecordModal.value = true
+}
+
+const closePaymentRecordModal = () => {
+  showPaymentRecordModal.value = false
+}
+
+// 删除后同步更新本机缓存（付款记录页/数据报告页共用同一份缓存）
+const removePaymentRecordFromCache = (id) => {
+  try {
+    const raw = uni.getStorageSync(PAYMENT_RECORDS_STORAGE_KEY)
+    const list = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : []
+    const next = (Array.isArray(list) ? list : []).filter(item => String(item._id || item.id) !== String(id))
+    uni.setStorageSync(PAYMENT_RECORDS_STORAGE_KEY, JSON.stringify(next))
+  } catch (error) {
+    // 忽略缓存写入失败
+  }
+}
+
+// 删除付款记录（二次确认）
+const confirmDeletePayment = (rec) => {
+  uni.showModal({
+    title: '删除付款记录',
+    content: `确认删除「${rec.userName || ''} ${Number(rec.changeAmount) >= 0 ? '+' : '-'}¥${formatMoney(Math.abs(Number(rec.changeAmount) || 0))}」这条记录吗？`,
+    confirmText: '删除',
+    confirmColor: '#dc2626',
+    cancelText: '取消',
+    success: async ({ confirm }) => {
+      if (!confirm) return
+      const res = await deletePaymentRecord(rec.id)
+      if (!res?.success) {
+        uni.showToast({ title: res?.message || '删除失败', icon: 'none' })
+        return
+      }
+      paymentRecords.value = paymentRecords.value.filter(item => item.id !== rec.id)
+      removePaymentRecordFromCache(rec.id)
+      uni.showToast({ title: '已删除', icon: 'none' })
+    }
+  })
 }
 
 const shiftCustomer = (offset) => {
@@ -1182,6 +1291,7 @@ const createBatchAddItem = (item, idx) => ({
   quantity: item.quantity,
   returnedBuckets: item.returnedBuckets,
   actualAmountReceived: item.actualAmountReceived,
+  isPayment: !!item.isPayment,
   expanded: false
 })
 
@@ -1196,37 +1306,50 @@ const handleBatchAddParse = () => {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
     const tokens = line.split(/\s+/).filter(Boolean)
-    if (tokens.length < 2) {
-      batchAddError.value = `第 ${index + 1} 行格式不正确`
-      batchAddItems.value = []
-      return
+    if (tokens.length < 1) continue
+    let cursor = 0
+    // 可选日期前缀（0623 或 2026-06-23）；没有就默认“当前时间（今天）”
+    let createdDate = normalizeShortDateToken(tokens[0])
+    if (createdDate) {
+      cursor = 1
+    } else {
+      createdDate = ''
     }
-    const createdDate = normalizeShortDateToken(tokens[0])
-    if (!createdDate) {
-      batchAddError.value = `第 ${index + 1} 行日期格式错误，支持 0623 或 2026-06-23`
-      batchAddItems.value = []
-      return
-    }
-    let cursor = 1
-    let userName = selectedUser.value || ''
+    // 可选客户名（非数字 token）；不写则用当前选中的客户
+    let userName = ''
     if (tokens[cursor] && !isNumericToken(tokens[cursor])) {
       userName = String(tokens[cursor] || '').trim()
       cursor += 1
     }
+    if (!userName) userName = selectedUser.value || ''
     if (!userName) {
-      batchAddError.value = `第 ${index + 1} 行缺少客户姓名`
+      batchAddError.value = `第 ${index + 1} 行缺少客户姓名（请先选择客户，或在文本中写明姓名）`
       batchAddItems.value = []
       return
     }
-    const quantity = Number(tokens[cursor] || 0)
-    const returnedBuckets = Number(tokens[cursor + 1] || 0)
-    const actualAmountReceived = Number(tokens[cursor + 2] || 0)
-    if (!Number.isFinite(quantity) || quantity < 0 || !Number.isInteger(quantity)) {
+    // 剩余数字：多数字按「数量 / 回桶 / 实收」；单数字视为“今天付款该金额”
+    const nums = tokens.slice(cursor).map(t => Number(t)).filter(n => Number.isFinite(n))
+    if (nums.length === 0) {
+      batchAddError.value = `第 ${index + 1} 行缺少数量或金额`
+      batchAddItems.value = []
+      return
+    }
+    let quantity = 0
+    let returnedBuckets = 0
+    let actualAmountReceived = 0
+    if (nums.length === 1) {
+      actualAmountReceived = nums[0]
+    } else {
+      quantity = nums[0] || 0
+      returnedBuckets = nums[1] || 0
+      actualAmountReceived = nums[2] || 0
+    }
+    if (!Number.isInteger(quantity) || quantity < 0) {
       batchAddError.value = `第 ${index + 1} 行送水数量错误`
       batchAddItems.value = []
       return
     }
-    if (!Number.isFinite(returnedBuckets) || returnedBuckets < 0 || !Number.isInteger(returnedBuckets)) {
+    if (!Number.isInteger(returnedBuckets) || returnedBuckets < 0) {
       batchAddError.value = `第 ${index + 1} 行回桶数量错误`
       batchAddItems.value = []
       return
@@ -1236,7 +1359,25 @@ const handleBatchAddParse = () => {
       batchAddItems.value = []
       return
     }
-    parsedItems.push(createBatchAddItem({ createdDate, userName, quantity, returnedBuckets, actualAmountReceived }, index))
+    // 付款记录判定：送水 0 且 回桶 0 且 实收 > 0（如 0 0 220 / 220 / 0926 0 0 220）
+    const isPayment = (Number(quantity) === 0 && Number(returnedBuckets) === 0 && Number(actualAmountReceived) > 0)
+    // 数量、回桶、金额不能全为 0，避免录出无意义的空订单（涉及金钱，必须拦截）
+    if (Number(quantity) === 0 && Number(returnedBuckets) === 0 && Number(actualAmountReceived) === 0) {
+      batchAddError.value = `第 ${index + 1} 行数量、回桶、金额不能全为 0`
+      batchAddItems.value = []
+      return
+    }
+    // 没写日期时：付款记录默认“今天”（用户明确要求）；普通订单仍需写日期，避免跨月补录落错月份
+    if (!createdDate) {
+      if (isPayment) {
+        createdDate = formatDate(new Date())
+      } else {
+        batchAddError.value = `第 ${index + 1} 行普通订单必须填写日期（例如 0823 10 5）`
+        batchAddItems.value = []
+        return
+      }
+    }
+    parsedItems.push(createBatchAddItem({ createdDate, userName, quantity, returnedBuckets, actualAmountReceived, isPayment }, index))
   }
   batchAddError.value = ''
   batchAddItems.value = parsedItems
@@ -1262,8 +1403,12 @@ const deleteBatchAddRow = (id) => {
   batchAddItems.value = batchAddItems.value.filter(item => item.id !== id)
 }
 
+const submitting = ref(false)
 const submitBatchAddOrders = async () => {
+  if (submitting.value) return
   if (batchAddItems.value.length === 0) return
+  submitting.value = true
+  try {
   const orders = []
   for (const item of batchAddItems.value) {
     const createdDate = normalizeShortDateToken(item.createdDate)
@@ -1301,7 +1446,39 @@ const submitBatchAddOrders = async () => {
     batchAddError.value = result.message || '批量创建订单失败'
     return
   }
+  // 付款记录：对标记为付款的项，额外生成一条收款流水并更新付款记录缓存
+  const paymentItems = batchAddItems.value.filter(item => item.isPayment)
+  for (const item of paymentItems) {
+    // addOrders 成功后 state.orders 已刷新，按「客户+日期+0送0回+实收」匹配新建的订单
+    const matchedOrder = state.orders.find(o =>
+      String(o.userName || '') === String(item.userName) &&
+      String(o.createdDate || '') === String(item.createdDate) &&
+      Number(o.quantity) === 0 && Number(o.returnedBuckets) === 0 &&
+      Number(o.actualAmountReceived) === Number(item.actualAmountReceived)
+    )
+    const payRes = await createPaymentRecord({
+      userName: item.userName,
+      orderId: matchedOrder?._id || '',
+      orderDate: item.createdDate,
+      beforeAmount: 0,
+      afterAmount: Number(item.actualAmountReceived),
+      changeAmount: Number(item.actualAmountReceived),
+      paidDate: item.createdDate,
+      remark: '',
+      createdAt: formatBeijingDateTime(new Date())
+    })
+    if (!payRes.success) {
+      uni.showToast({ title: `付款记录生成失败：${payRes.message || ''}`, icon: 'none' })
+    }
+  }
+  uni.showToast({
+    title: `已创建 ${orders.length} 笔订单${paymentItems.length ? `，${paymentItems.length} 笔付款记录` : ''}`,
+    icon: 'none'
+  })
   closeBatchAddModal()
+  } finally {
+    submitting.value = false
+  }
 }
 
 const closeEditModal = () => {
@@ -1486,8 +1663,8 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 .customer-card { padding: 16px; margin-bottom: 16px; background: #f8fafc; border-color: #e3ebf3; }
 .customer-card-top { display: flex; align-items: center; gap: 12px; }
 .customer-name { font-size: 12px; font-weight: 700; color: #1e293b; }
-.customer-action-group { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.customer-copy-btn { display: flex; align-items: center; justify-content: center; padding: 7px 12px; background: #f8fafc; border: 1px solid #dbe4ee; border-radius: 12px; }
+.customer-action-group { flex: 1; display: flex; align-items: center; gap: 8px; }
+.customer-copy-btn { flex: 1; display: flex; align-items: center; justify-content: center; padding: 7px 0; background: #f8fafc; border: 1px solid #dbe4ee; border-radius: 12px; }
 .customer-copy-btn-active { background: #ecfdf5; border-color: #a7f3d0; }
 .customer-copy-btn-text { font-size: 11px; font-weight: 700; color: #334155; line-height: 1; }
 .customer-remark-panel { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(226,232,240,0.8); }
@@ -1656,6 +1833,26 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
   font-size: 12px;
   color: #94a3b8;
 }
+
+/* 付款记录明细 */
+.payment-row { padding: 10px 12px; background: #f8fafc; border: 1px solid #e8eef5; border-radius: 12px; margin-bottom: 8px; }
+.payment-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.payment-row-time { font-size: 11px; font-weight: 700; color: #64748b; font-family: monospace; }
+.payment-row-amount { font-size: 14px; font-weight: 900; font-family: monospace; }
+.payment-row-body { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.payment-row-order { font-size: 11px; color: #475569; font-family: monospace; }
+.payment-row-change { font-size: 11px; color: #64748b; font-family: monospace; }
+.payment-row-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.payment-row-remark { font-size: 11px; color: #a78bfa; word-break: break-all; flex: 1; min-width: 0; }
+.payment-row-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.payment-row-delete {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  color: #94a3b8; font-size: 14px; font-weight: 700; line-height: 1;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.payment-row-delete:active { background: #fee2e2; color: #dc2626; border-color: #fecaca; }
 
 .safe-bottom { height: 32px; }
 </style>

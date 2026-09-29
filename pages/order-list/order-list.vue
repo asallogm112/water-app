@@ -282,8 +282,8 @@
 							</view>
 							<view class="batch-result-delete-btn" @tap="deleteBatchOrderRow(item.id)">删除</view>
 						</view>
-						<button class="batch-result-submit-btn" :class="{ 'btn-disabled': batchOrderItems.length === 0 }"
-							:disabled="submittableBatchOrderItems.length === 0" @tap="submitBatchOrdersFromModal">提交这 {{ submittableBatchOrderItems.length }} 笔订单</button>
+						<button class="batch-result-submit-btn" :class="{ 'btn-disabled': submittableBatchOrderItems.length === 0 || batchOrderSubmitting }"
+							@tap="submitBatchOrdersFromModal">{{ batchOrderSubmitText }}</button>
 					</view>
 				</scroll-view>
 			</view>
@@ -964,10 +964,20 @@
 			}
 		})
 	}
+	// 提交中状态：防重复点击，并让用户明确知道点击已生效
+	// 注意：不使用 <button :disabled>——安卓上该属性从禁用切回可用后，按钮可能仍无法点击
+	const batchOrderSubmitting = ref(false)
+	const batchOrderSubmitText = computed(() => batchOrderSubmitting.value ? '提交中，请稍候…' : `提交这 ${submittableBatchOrderItems.length} 笔订单`)
+	// 统一错误反馈：弹窗内横幅 + 屏幕 toast（提交按钮在滚动区底部，单靠顶部横幅用户可能看不到）
+	const notifyBatchOrderError = (message) => {
+		batchOrderError.value = message
+		uni.showToast({ title: message, icon: 'none', duration: 3000 })
+	}
 	const resetBatchOrderModalState = () => {
 		batchOrderInputText.value = ''
 		batchOrderItems.value = []
 		batchOrderError.value = ''
+		batchOrderSubmitting.value = false
 		batchDuplicateLines.value = []
 		batchUniqueLines.value = []
 		showBatchDuplicateModal.value = false
@@ -1209,13 +1219,18 @@
 		if (resolver) resolver(!!shouldSubmit)
 	}
 	const submitBatchOrdersFromModal = async () => {
+		if (batchOrderSubmitting.value) return
 		batchOrderError.value = ''
 		if (batchOrderItems.value.length === 0) {
-			batchOrderError.value = '当前没有可提交的订单'
+			notifyBatchOrderError('当前没有可提交的订单')
+			return
+		}
+		if (submittableBatchOrderItems.value.length === 0) {
+			notifyBatchOrderError('解析结果全部是重复数据，没有可提交的订单')
 			return
 		}
 		if (batchOrderItems.value.some(item => !String(item.userName || '').trim())) {
-			batchOrderError.value = '所有订单均必须填写客户姓名'
+			notifyBatchOrderError('所有订单均必须填写客户姓名')
 			return
 		}
 		const invalidIndex = batchOrderItems.value.findIndex(item => {
@@ -1224,7 +1239,7 @@
 				Number(item.unitPrice) < 0 || Number(item.actualAmountReceived) < 0
 		})
 		if (invalidIndex !== -1) {
-			batchOrderError.value = `第 ${invalidIndex + 1} 行存在无效数据：送水数允许为 0，但不能小于 0；请同时检查回桶数、单价和实收金额`
+			notifyBatchOrderError(`第 ${invalidIndex + 1} 行存在无效数据：送水数允许为 0，但不能小于 0；请同时检查回桶数、单价和实收金额`)
 			return
 		}
 
@@ -1257,22 +1272,35 @@
 		})
 
 		if (finalOrders.length === 0) {
-			batchOrderError.value = '解析结果全部是重复数据，没有可提交的订单'
+			notifyBatchOrderError('解析结果全部是重复数据，没有可提交的订单')
 			return
 		}
 
-		const result = await addOrders(finalOrders)
-		if (!result?.success) {
-			batchOrderError.value = result?.message || '批量保存失败，请稍后重试'
-			if (result?.code === 'DUPLICATE_ORDER' && Array.isArray(result.duplicateOrders) && result.duplicateOrders.length > 0) {
-				await showBatchDuplicateAlert(result.duplicateOrders, [])
+		batchOrderSubmitting.value = true
+		try {
+			const result = await addOrders(finalOrders)
+			if (!result?.success) {
+				const message = result?.message || '批量保存失败，请稍后重试'
+				batchOrderError.value = message
+				if (result?.code === 'DUPLICATE_ORDER' && Array.isArray(result.duplicateOrders) && result.duplicateOrders.length > 0) {
+					await showBatchDuplicateAlert(result.duplicateOrders, [])
+				} else {
+					uni.showToast({ title: message, icon: 'none', duration: 3000 })
+				}
+				return
 			}
-			return
-		}
 
-		const addedCount = Number(result.addedCount || result.count || finalOrders.length) || 0
-		resetBatchOrderModalState()
-		showBatchOrderModal.value = false
+			const addedCount = Number(result.addedCount || result.count || finalOrders.length) || 0
+			resetBatchOrderModalState()
+			showBatchOrderModal.value = false
+			uni.showToast({ title: `已提交 ${addedCount} 笔订单`, icon: 'none', duration: 2000 })
+		} catch (submitError) {
+			const message = submitError?.message || String(submitError || '提交失败')
+			batchOrderError.value = `提交失败：${message}`
+			uni.showToast({ title: '提交失败，请重试', icon: 'none', duration: 3000 })
+		} finally {
+			batchOrderSubmitting.value = false
+		}
 	}
 	const previewImage = (url) => {
 		previewUrl.value = url

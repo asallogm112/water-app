@@ -1,6 +1,7 @@
 # MEMORY（长期记忆）
 
 ## 用户偏好
+- **「工资报销」板块（pages/misc-records）用户已明确要废弃，后续不要再投入精力**（2026-09-29 用户原话："这块后面我会砍掉的，你记住就行"）→ 该页面的新需求可忽略；它内部仍有 `:disabled` 提交按钮等已知隐患，无需再修
 - **绝对不要乱改逻辑**：用户单人使用的小程序，改动必须可控；UI 优化只动视觉，不碰数据流/交互逻辑
 - **需求模糊时先问清再动手**，严格按字面要求改，不要自行扩大改动范围（顺序/文案/导出等都别"顺手统一"）；改错了用户会很愤怒
 - **杂事页（现名"工资报销"）规则**：无 segment 切换，列表工资+报销混排；编辑报销时金额锁定只改事项，新增报销才从内容提取金额；报销紫/工资橙颜色语义不变
@@ -44,6 +45,12 @@
 - 用户说的"黑色加载框"= `uni.showToast` 的黑底白字提示（不是 showLoading，项目里没有 showLoading）
 
 ## 技术要点
+- **月份选择器约定**（用户 2026-09-29 强制要求）：所有页面的月份筛选项**第一项必须是「全部月份」**（值 `'ALL'`），实现方式统一：`monthOptions = computed(() => ['全部月份', ...availableMonths])`、index 映射（ALL→0，其余 +1）、选中 ALL 时数据不过滤（展示全部月份）。**例外**：编辑单条记录时的"记录月份"选择器不加（记录必须归属具体月份）。涉及页面：monthly-summary / user-monthly-summary / payment-records（原本已有）、stats / misc-records（2026-09-29 新增）
+- **批量提交按钮约定**（2026-09-29 修复"安卓点击没反应"后定规）：
+  - 不要用 `<button :disabled>` —— 安卓微信小程序上该属性从 true 切回 false 后按钮可能仍无法点击
+  - 灰显用 class（如 `.btn-disabled`），可提交数判断放 handler 内并 `uni.showToast` 提示
+  - 提交必须加 `submitting` 状态：文案变"提交中，请稍候…"、防重复点击、`try/catch/finally` 兜底
+  - 错误/成功提示别只放在滚动区顶部（提交按钮在底部时用户看不到），必须同时 `uni.showToast`
 - **数据存储**：订单/客户/合并状态/工资报销全部走 uniCloud 云对象 `waterService`（集合：order_list、user_list、admin_list、order_merge_status、misc_record_list）；本机 storage 仅作缓存兜底
 - **⚠️ 行尾陷阱**：`index.obj.js`、`store.js` 等是**混合行尾**（CRLF+LF），`replace_in_file` 会统一成 LF 造成全文件 diff。改这类文件必须 `git checkout` 恢复后用 python 二进制插入（沿用原位行尾）
 - 大段 replace 后必须验证语法闭合（lint 抓不到半个未闭合函数，需括号配对扫描）——曾因残留半个函数整包编译失败

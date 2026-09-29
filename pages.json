@@ -80,6 +80,13 @@
         "navigationBarTitleText": "工资报销",
         "enablePullDownRefresh": false
       }
+    },
+    {
+      "path": "pages/payment-records/payment-records",
+      "style": {
+        "navigationBarTitleText": "付款记录",
+        "enablePullDownRefresh": false
+      }
     }
   ],
   "globalStyle": {

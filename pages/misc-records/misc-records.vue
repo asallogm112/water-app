@@ -14,7 +14,7 @@
           </view>
           <view class="month-picker-row">
             <view class="month-shift-btn" @tap="shiftMonth(-1)"><text>上一月</text></view>
-            <picker class="month-filter-col filter-col" mode="selector" :range="availableMonths" :value="monthIndex" @change="onMonthChange">
+            <picker class="month-filter-col filter-col" mode="selector" :range="monthOptions" :value="monthIndex" @change="onMonthChange">
               <view class="filter-picker"><text>{{ monthDisplayLabel }}</text><text class="picker-arrow">▼</text></view>
             </picker>
             <view class="month-shift-btn" :class="{ 'month-shift-btn-disabled': isNextMonthDisabled }" @tap="shiftMonth(1)"><text>下一月</text></view>
@@ -44,7 +44,7 @@
 
         <view v-if="monthRecords.length === 0" class="empty-state">
           <text class="empty-icon">📄</text>
-          <text>本月暂无记录</text>
+          <text>{{ selectedMonth === 'ALL' ? '暂无记录' : '本月暂无记录' }}</text>
         </view>
 
         <view v-else>
@@ -76,7 +76,7 @@
                 <text class="misc-group-count">{{ reimburseRecords.length }} 条</text>
               </view>
             </view>
-            <view v-if="reimburseRecords.length === 0" class="misc-group-empty">本月暂无报销记录</view>
+            <view v-if="reimburseRecords.length === 0" class="misc-group-empty">{{ selectedMonth === 'ALL' ? '暂无报销记录' : '本月暂无报销记录' }}</view>
             <view v-for="rec in reimburseRecords" :key="rec.id" class="misc-item" @tap="openEdit(rec)">
               <view class="misc-item-header">
                 <text class="misc-name">{{ rec.name }}</text>
@@ -209,6 +209,8 @@ const SELECTED_MONTH_KEY = 'misc_selected_month'
 const readSelectedMonth = () => {
   try {
     const saved = String(uni.getStorageSync(SELECTED_MONTH_KEY) || '').trim()
+    // 'ALL' = 全部月份
+    if (saved === 'ALL') return 'ALL'
     if (/^\d{4}-\d{2}$/.test(saved)) return saved
     return ''
   } catch (error) {
@@ -278,15 +280,23 @@ const availableMonths = computed(() => {
   return list.reverse()
 })
 
-const monthIndex = computed(() => Math.max(0, availableMonths.value.indexOf(selectedMonth.value)))
-const monthDisplayLabel = computed(() => `${selectedMonth.value.replace('-', '年')}月`)
-const monthShort = computed(() => `${Number(selectedMonth.value.split('-')[1])}月份`)
-const isNextMonthDisabled = computed(() => selectedMonth.value >= currentMonth())
+// 月份下拉选项：第一项固定为"全部月份"
+const monthOptions = computed(() => ['全部月份', ...availableMonths.value])
+const monthIndex = computed(() => {
+  if (selectedMonth.value === 'ALL') return 0
+  const idx = availableMonths.value.indexOf(selectedMonth.value)
+  return idx >= 0 ? idx + 1 : 0
+})
+const monthDisplayLabel = computed(() => selectedMonth.value === 'ALL' ? '全部月份' : `${selectedMonth.value.replace('-', '年')}月`)
+const monthShort = computed(() => selectedMonth.value === 'ALL' ? '全部' : `${Number(selectedMonth.value.split('-')[1])}月份`)
+const isNextMonthDisabled = computed(() => selectedMonth.value === 'ALL' || selectedMonth.value >= currentMonth())
 
+// "全部月份"时展示所有月份的记录（工资 + 报销），否则只展示选中月
 const monthRecords = computed(() => {
-  return records.value
-    .filter(r => String(r.month || '').substring(0, 7) === selectedMonth.value)
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh'))
+  const list = selectedMonth.value === 'ALL'
+    ? records.value.slice()
+    : records.value.filter(r => String(r.month || '').substring(0, 7) === selectedMonth.value)
+  return list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh'))
 })
 
 const groupByType = (type) => monthRecords.value.filter(r => r.type === type)
@@ -327,12 +337,20 @@ const persistSelectedMonth = (month) => {
 }
 
 const onMonthChange = (e) => {
-  selectedMonth.value = availableMonths.value[e.detail.value]
+  const val = Number(e.detail.value)
+  selectedMonth.value = val === 0 ? 'ALL' : availableMonths.value[val - 1]
   persistSelectedMonth(selectedMonth.value)
 }
 
 const shiftMonth = (offset) => {
   if (offset > 0 && isNextMonthDisabled.value) return
+  // "全部月份"时点上一月 → 回到最新月份
+  if (selectedMonth.value === 'ALL') {
+    const latest = availableMonths.value[0] || currentMonth()
+    selectedMonth.value = latest
+    persistSelectedMonth(latest)
+    return
+  }
   const [y, m] = selectedMonth.value.split('-').map(Number)
   const d = new Date(y, m - 1 + offset, 1)
   const target = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -344,8 +362,9 @@ const shiftMonth = (offset) => {
 
 const openAdd = () => {
   editingId.value = ''
-  // 默认沿用上次录入的人名；月份默认当前选中的月份
-  form.value = { type: '工资', name: readLastName(), desc: '', amount: '', month: selectedMonth.value }
+  // 默认沿用上次录入的人名；月份默认当前选中的月份（"全部月份"时用当前月）
+  const defaultMonth = selectedMonth.value === 'ALL' ? currentMonth() : selectedMonth.value
+  form.value = { type: '工资', name: readLastName(), desc: '', amount: '', month: defaultMonth }
   showModal.value = true
 }
 
@@ -412,8 +431,9 @@ const saveRecord = async () => {
   }
   // 记住本次人名，下次新增默认沿用
   uni.setStorageSync(LAST_NAME_KEY, name)
-  // 月份：新增默认当前选中月；编辑时用弹窗里选的月份（可改）
-  const month = String(form.value.month || '').substring(0, 7) || selectedMonth.value
+  // 月份：新增默认当前选中月（"全部月份"时用当前月）；编辑时用弹窗里选的月份（可改）
+  const fallbackMonth = selectedMonth.value === 'ALL' ? currentMonth() : selectedMonth.value
+  const month = String(form.value.month || '').substring(0, 7) || fallbackMonth
   const payload = { type, name, month, desc, amount }
   // 保存后切到该月查看，并记忆
   selectedMonth.value = month
@@ -568,7 +588,8 @@ const parseBatch = () => {
     parsed.push({
       id: `batch-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
       type: batchType.value,
-      month: selectedMonth.value,
+      // "全部月份"筛选下批量录入，落到当前月
+      month: selectedMonth.value === 'ALL' ? currentMonth() : selectedMonth.value,
       name,
       desc,
       amount: Number(amount)
@@ -750,11 +771,11 @@ const buildCombinedSheetRows = () => {
 
 const handleExport = () => {
   if (monthRecords.value.length === 0) {
-    uni.showToast({ title: '本月暂无记录', icon: 'none' })
+    uni.showToast({ title: selectedMonth.value === 'ALL' ? '暂无记录' : '本月暂无记录', icon: 'none' })
     return
   }
   exportExcelWorkbook({
-    fileName: `${selectedMonth.value} 工资报销`,
+    fileName: `${selectedMonth.value === 'ALL' ? '全部月份' : selectedMonth.value} 工资报销`,
     sheets: [
       { name: '工资报销', ...buildCombinedSheetRows() }
     ]

@@ -181,6 +181,16 @@
 				action: 'misc-records'
 			})
 		}
+		if (state.currentUser?.isAdmin) {
+			items.push({
+				key: 'payment-records',
+				icon: '💳',
+				name: '付款记录',
+				desc: '收款明细',
+				iconClass: 'func-icon-sky',
+				action: 'payment-records'
+			})
+		}
 		items.push({
 			key: 'profile',
 			icon: '👤',
@@ -202,7 +212,8 @@
 			'profile': '/pages/profile/profile',
 			'monthly-summary': '/pages/monthly-summary/monthly-summary',
 			'user-monthly-summary': '/pages/user-monthly-summary/user-monthly-summary',
-			'misc-records': '/pages/misc-records/misc-records'
+			'misc-records': '/pages/misc-records/misc-records',
+			'payment-records': '/pages/payment-records/payment-records'
 			}
 		uni.navigateTo({
 			url: pageMap[tab]

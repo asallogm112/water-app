@@ -111,6 +111,8 @@ function readSessionState() {
 	}
 }
 
+const PAYMENT_RECORDS_STORAGE_KEY = 'payment_record_cache'
+
 const state = reactive({
 	currentUser: null,
 	users: [],
@@ -357,6 +359,79 @@ async function ensureMiscRecordsLoaded() {
 }
 // 用户主动点击首页刷新按钮：全量同步服务器数据（客户/订单/合并状态/工资报销）
 // 这是除登录外唯一允许请求服务器的入口；各页面进入时一律不再请求云端
+async function loadPaymentRecords() {
+	try {
+		const result = unwrapServiceResult(await getService().getPaymentRecordList({
+			sessionUserId: getSessionUserId()
+		}))
+		if (!result?.success) {
+			return { success: false, message: formatErrorMessage(result?.message, '加载付款记录失败'), records: [] }
+		}
+		return {
+			success: true,
+			records: (result.records || []).map(r => ({
+				id: r._id || r.id,
+				userName: String(r.userName || ''),
+				orderId: String(r.orderId || ''),
+				orderDate: String(r.orderDate || ''),
+				beforeAmount: Number(r.beforeAmount) || 0,
+				afterAmount: Number(r.afterAmount) || 0,
+				changeAmount: Number(r.changeAmount) || 0,
+				paidDate: String(r.paidDate || ''),
+				remark: String(r.remark || ''),
+				createdAt: String(r.createdAt || '')
+			}))
+		}
+	} catch (error) {
+		return { success: false, message: formatErrorMessage(error, '加载付款记录失败'), records: [] }
+	}
+}
+
+
+
+async function createPaymentRecord(payload = {}) {
+	try {
+		const result = unwrapServiceResult(await getService().createPaymentRecord({
+			sessionUserId: getSessionUserId(),
+			...payload
+		}))
+		if (!result?.success) {
+			return { success: false, message: formatErrorMessage(result?.message, '创建付款记录失败') }
+		}
+		// 写操作成功后刷新本机付款记录缓存（付款记录页/按人对账只读缓存，不会主动请求）
+		const paymentResult = await loadPaymentRecords()
+		if (paymentResult?.success) {
+			try {
+				uni.setStorageSync(PAYMENT_RECORDS_STORAGE_KEY, JSON.stringify(paymentResult.records || []))
+			} catch (error) { /* 忽略缓存写入失败 */ }
+		}
+		return { success: true, recordId: result.recordId }
+	} catch (error) {
+		return { success: false, message: formatErrorMessage(error, '创建付款记录失败') }
+	}
+}
+
+async function deletePaymentRecord(recordId) {
+	try {
+		const result = unwrapServiceResult(await getService().deletePaymentRecord({
+			sessionUserId: getSessionUserId(),
+			recordId
+		}))
+		if (!result?.success) {
+			return { success: false, message: formatErrorMessage(result?.message, '删除付款记录失败') }
+		}
+		const paymentResult = await loadPaymentRecords()
+		if (paymentResult?.success) {
+			try {
+				uni.setStorageSync(PAYMENT_RECORDS_STORAGE_KEY, JSON.stringify(paymentResult.records || []))
+			} catch (error) { /* 忽略缓存写入失败 */ }
+		}
+		return { success: true }
+	} catch (error) {
+		return { success: false, message: formatErrorMessage(error, '删除付款记录失败') }
+	}
+}
+
 async function refreshAll(options = {}) {
 	bootstrapLoaded = false
 	mergeStatusCache = null
@@ -392,7 +467,16 @@ async function refreshAll(options = {}) {
 			// 忽略缓存写入失败
 		}
 	}
-	return result
+
+	// 付款记录写入本机缓存（付款记录页/按人对账页进入时直接读缓存，不请求）
+	const paymentResult = await loadPaymentRecords()
+	if (paymentResult?.success) {
+		try {
+			uni.setStorageSync(PAYMENT_RECORDS_STORAGE_KEY, JSON.stringify(paymentResult.records || []))
+		} catch (error) {
+			// 忽略缓存写入失败
+		}
+	}	return result
 }
 
 // 工资报销：云端记录 → 本机缓存结构
@@ -703,6 +787,40 @@ async function updateOrder(orderId, orderData) {
 			}
 		}
 		await loadOrders()
+		// 订单实收金额可能变化 → 同步刷新付款记录缓存（付款记录页只读本机缓存，不会主动请求）
+		const paymentResult = await loadPaymentRecords()
+		if (paymentResult?.success) {
+			try {
+				uni.setStorageSync(PAYMENT_RECORDS_STORAGE_KEY, JSON.stringify(paymentResult.records || []))
+			} catch (error) { /* 忽略缓存写入失败 */ }
+		} else {
+			// 云函数不可用时，基于修改前后实收对比，在本地缓存补一条付款流水，避免“改了实收却看不到付款记录”
+			try {
+				const oldOrder = state.orders.find(o => o._id === orderId)
+				const oldPaid = Number(oldOrder?.actualAmountReceived ?? oldOrder?.paid ?? 0)
+				const newPaid = Number(orderData?.actualAmountReceived ?? 0)
+				if (oldPaid !== newPaid) {
+					const now = new Date()
+					const cacheRaw = uni.getStorageSync(PAYMENT_RECORDS_STORAGE_KEY)
+					const cacheList = cacheRaw ? (typeof cacheRaw === 'string' ? JSON.parse(cacheRaw) : cacheRaw) : []
+					const safeList = Array.isArray(cacheList) ? cacheList : []
+					safeList.push({
+						id: `local-${orderId}-${now.getTime()}`,
+						userName: String(orderData?.userName ?? oldOrder?.userName ?? ''),
+						orderId: String(orderId || ''),
+						orderDate: String(oldOrder?.createdDate ?? ''),
+						beforeAmount: oldPaid,
+						afterAmount: newPaid,
+						changeAmount: Number((newPaid - oldPaid).toFixed(2)),
+						paidDate: now.toISOString().slice(0, 10),
+						remark: String(orderData?.notes ?? ''),
+						createdAt: now.toISOString().slice(0, 16).replace('T', ' '),
+						source: 'local'
+					})
+					uni.setStorageSync(PAYMENT_RECORDS_STORAGE_KEY, JSON.stringify(safeList))
+				}
+			} catch (e) { /* 本地兜底失败不影响订单保存 */ }
+		}
 		showNotification('订单信息已更新')
 		return {
 			success: true
@@ -774,6 +892,9 @@ export function useStore() {
 		state,
 		loadUsers,
 		loadOrders,
+		loadPaymentRecords,
+		createPaymentRecord,
+		deletePaymentRecord,
 		loadAllData,
 		loginWithPassword,
 		logout,
