@@ -30,7 +30,8 @@ export function formatDate(date) {
 export function roundMoney(value) {
   const amount = Number(value)
   if (!Number.isFinite(amount)) return 0
-  return Number(amount.toFixed(2))
+  // 修正二进制浮点误差（如 1.005→1.00、2.675→2.67 这类边界），避免金额少记/多记
+  return Number((amount + (amount >= 0 ? 1e-9 : -1e-9)).toFixed(2))
 }
 
 export function formatMoney(value) {
@@ -70,9 +71,6 @@ export function getOrderUnitPrice(order, usersOrMap = []) {
 
 export function getOrderReceivableAmount(order, usersOrMap = []) {
   const userName = String(order?.userName || '').trim()
-  if (userName === '散户') {
-    return getOrderActualReceivedAmount(order)
-  }
   const unitPriceMap = usersOrMap instanceof Map ? usersOrMap : createUserUnitPriceMap(usersOrMap)
   const quantity = Number(order?.quantity || 0)
   const orderUnitPrice = Number(order?.unitPrice)

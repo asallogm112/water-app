@@ -898,7 +898,7 @@ const handleExport = () => {
 .result-preview-line-duplicate { color: #dc2626; }
 .result-preview-line-unique { color: #16a34a; }
 .result-delete-btn { flex-shrink: 0; padding: 6px 10px; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px; font-size: 12px; font-weight: 800; color: #dc2626; }
-.result-submit-btn { width: 100%; height: 46px; margin-top: 14px; background: linear-gradient(135deg, #0f766e, #10b981); color: #fff; border-radius: 16px; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 20px rgba(16,185,129,.16); }
+.result-submit-btn { width: 100%; height: 44px; margin-top: 14px; background: linear-gradient(135deg, #0f766e, #10b981); color: #fff; border-radius: 16px; font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 20px rgba(16,185,129,.16); }
 .btn-disabled { opacity: .5; }
 .batch-dup-hint { display: block; margin-top: 4px; font-size: 11px; font-weight: 800; color: #dc2626; }
 .batch-dup-summary { display: block; font-size: 11px; font-weight: 700; color: #dc2626; margin-top: 6px; }

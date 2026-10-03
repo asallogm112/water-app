@@ -79,9 +79,9 @@
               </view>
             </view>
           </view>
-          <view v-if="selectedCustomerObj.phone || selectedCustomerObj.address" class="customer-contact">
-            <text v-if="selectedCustomerObj.phone">📱 {{ selectedCustomerObj.phone }}</text>
-            <text v-if="selectedCustomerObj.address">📍 {{ selectedCustomerObj.address }}</text>
+          <view v-if="selectedCustomerObj?.phone || selectedCustomerObj?.address" class="customer-contact">
+            <text v-if="selectedCustomerObj?.phone">📱 {{ selectedCustomerObj?.phone }}</text>
+            <text v-if="selectedCustomerObj?.address">📍 {{ selectedCustomerObj?.address }}</text>
           </view>
         </view>
 
@@ -368,19 +368,12 @@
           <view v-if="customerPaymentRecords.length === 0" class="orders-empty">暂无付款记录</view>
           <view v-for="rec in customerPaymentRecords" :key="rec.id" class="payment-row">
             <view class="payment-row-head">
-              <text class="payment-row-time">{{ rec.createdAt || rec.paidDate || '' }}</text>
-              <view class="payment-row-head-right">
-                <text class="payment-row-amount" :class="Number(rec.changeAmount) >= 0 ? 'text-emerald' : 'text-receivable'">
-                  {{ Number(rec.changeAmount) >= 0 ? '+' : '-' }}¥{{ formatMoney(Math.abs(Number(rec.changeAmount) || 0)) }}
-                </text>
-                <text class="payment-row-delete" @tap.stop="confirmDeletePayment(rec)">✕</text>
-              </view>
+              <view class="payment-row-time">{{ formatCnDate(rec.paidDate || rec.createdAt) }}</view>
+              <text class="payment-row-delete" @tap.stop="confirmDeletePayment(rec)">✕</text>
             </view>
-            <view class="payment-row-body">
-              <text class="payment-row-order">订单 {{ rec.orderDate || '-' }}</text>
-              <text class="payment-row-change">¥{{ formatMoney(rec.beforeAmount) }} → ¥{{ formatMoney(rec.afterAmount) }}</text>
-            </view>
-            <view v-if="rec.remark" class="payment-row-remark">备注：{{ rec.remark }}</view>
+            <view class="payment-row-name">{{ rec.userName }}</view>
+            <view class="payment-row-amount" :class="Number(rec.changeAmount) >= 0 ? 'text-emerald' : 'text-receivable'">{{ payAmountText(rec) }}</view>
+            <view v-if="rec.orderDate" class="payment-row-order">订单 : {{ formatCnDate(rec.orderDate) }}</view>
           </view>
         </scroll-view>
       </view>
@@ -444,6 +437,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { useStore } from '../../common/store.js'
 import { createUserUnitPriceMap, formatMoney, getOrderUnitPrice, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
@@ -462,6 +456,27 @@ const USER_MONTHLY_ORDERS_EXPANDED_KEY = 'user_monthly_orders_expanded_map'
 
 const selectedUser = ref('')
 const selectedMonth = ref('ALL')
+
+// 跨页跳转带入的定位参数（付款记录点击 → 按人对账）：优先用这两个值
+const queryUser = ref('')
+const queryMonth = ref('')
+onLoad(() => {
+  // 从本地存储读取付款记录跳转带入的定位参数（避免 URL 中文编码乱码）
+  let jump = null
+  try {
+    const raw = uni.getStorageSync('payment_record_jump_target')
+    if (raw) {
+      jump = JSON.parse(raw)
+      uni.removeStorageSync('payment_record_jump_target')
+    }
+  } catch (e) { /* 忽略解析失败 */ }
+  if (jump && jump.userName) queryUser.value = String(jump.userName).trim()
+  if (jump && jump.month) queryMonth.value = String(jump.month).trim()
+  if (queryMonth.value) selectedMonth.value = queryMonth.value
+  // 必须在 onLoad 里直接定位客户：customerList 的 immediate watch 在 setup 阶段
+  // 已先选了默认用户，且其后 customerList 不再变化，不会重新触发，故此处要显式设置
+  if (queryUser.value) selectedUser.value = queryUser.value
+})
 
 const readOrdersExpandedMap = () => {
   try {
@@ -582,11 +597,15 @@ watch(customerList, (list) => {
   if (!state.currentUser?.isAdmin) {
     selectedUser.value = state.currentUser?.userName
   } else if (list.length > 0) {
-    const storedUser = String(uni.getStorageSync(USER_MONTHLY_SELECTED_USER_KEY) || '').trim()
-    if (storedUser && list.some(item => item.userName === storedUser)) {
-      selectedUser.value = storedUser
-    } else if (!selectedUser.value || !list.some(item => item.userName === selectedUser.value)) {
-      selectedUser.value = list[0].userName
+    if (queryUser.value && list.some(item => item.userName === queryUser.value)) {
+      selectedUser.value = queryUser.value
+    } else {
+      const storedUser = String(uni.getStorageSync(USER_MONTHLY_SELECTED_USER_KEY) || '').trim()
+      if (storedUser && list.some(item => item.userName === storedUser)) {
+        selectedUser.value = storedUser
+      } else if (!selectedUser.value || !list.some(item => item.userName === selectedUser.value)) {
+        selectedUser.value = list[0].userName
+      }
     }
   }
 }, { immediate: true })
@@ -671,6 +690,23 @@ const customerPaymentRecords = computed(() => {
     .filter(record => record.userName === name)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
 })
+
+// 付款日期：YYYY-MM-DD(或带时分) → M月D号
+const formatCnDate = (dateStr) => {
+  const s = String(dateStr || '').trim()
+  if (!s) return ''
+  const m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (!m) return s
+  return `${Number(m[2])}月${Number(m[3])}号`
+}
+
+// 付款金额文字：付款220元 / 退款X元（整数去小数，负数视为退款）
+const payAmountText = (rec) => {
+  const amt = Number(rec?.changeAmount || 0)
+  const v = Math.abs(amt)
+  const num = Number.isInteger(v) ? String(v) : v.toFixed(2)
+  return `${amt >= 0 ? '付款' : '退款'}${num}元`
+}
 
 const openPaymentRecordModal = () => {
   paymentRecords.value = readPaymentRecords()
@@ -1277,6 +1313,7 @@ const openAddModal = () => {
 const closeBatchAddModal = () => {
   showBatchAddModal.value = false
   batchAddError.value = ''
+  batchAddItems.value = []
 }
 
 const clearBatchAddInput = () => {
@@ -1441,21 +1478,27 @@ const submitBatchAddOrders = async () => {
       notes: ''
     })
   }
+  // 记录提交前的订单 _id，事后只在本批次新建订单中匹配付款记录（排除历史订单）
+  const beforeOrderIds = new Set(state.orders.map(o => o._id))
   const result = await addOrders(orders)
   if (!result.success) {
     batchAddError.value = result.message || '批量创建订单失败'
     return
   }
   // 付款记录：对标记为付款的项，额外生成一条收款流水并更新付款记录缓存
+  // 仅在本批次新建订单中匹配，且每笔付款独占一个订单，避免同额/历史订单被重复关联
+  const newOrders = state.orders.filter(o => !beforeOrderIds.has(o._id))
+  const usedOrderIds = new Set()
   const paymentItems = batchAddItems.value.filter(item => item.isPayment)
   for (const item of paymentItems) {
-    // addOrders 成功后 state.orders 已刷新，按「客户+日期+0送0回+实收」匹配新建的订单
-    const matchedOrder = state.orders.find(o =>
+    const matchedOrder = newOrders.find(o =>
+      !usedOrderIds.has(o._id) &&
       String(o.userName || '') === String(item.userName) &&
       String(o.createdDate || '') === String(item.createdDate) &&
       Number(o.quantity) === 0 && Number(o.returnedBuckets) === 0 &&
       Number(o.actualAmountReceived) === Number(item.actualAmountReceived)
     )
+    if (matchedOrder) usedOrderIds.add(matchedOrder._id)
     const payRes = await createPaymentRecord({
       userName: item.userName,
       orderId: matchedOrder?._id || '',
@@ -1646,7 +1689,7 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 .filter-picker {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; padding: 8px 10px; background: #fff; border: 1px solid #e2e8f0;
-  border-radius: 14px; font-size: 12px; font-weight: 700; color: #1e293b; box-sizing: border-box; box-shadow: 0 6px 16px rgba(15,23,42,.04);
+  border-radius: 12px; font-size: 12px; font-weight: 700; color: #1e293b; box-sizing: border-box; box-shadow: 0 6px 16px rgba(15,23,42,.04);
 }
 .filter-picker-locked { background: #f1f5f9; }
 .locked-tag { font-size: 9px; background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
@@ -1660,7 +1703,7 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 }
 .month-shift-btn-disabled { opacity: 0.45; }
 
-.customer-card { padding: 16px; margin-bottom: 16px; background: #f8fafc; border-color: #e3ebf3; }
+.customer-card { padding: 16px; margin-bottom: 16px; background: #fff; border-color: #e3ebf3; }
 .customer-card-top { display: flex; align-items: center; gap: 12px; }
 .customer-name { font-size: 12px; font-weight: 700; color: #1e293b; }
 .customer-action-group { flex: 1; display: flex; align-items: center; gap: 8px; }
@@ -1770,7 +1813,7 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 .customer-remark-textarea { display: block; width: calc(100% - 28px); min-height: 128px; padding: 13px; background: #eee; border: 1px solid #dbe4ee; border-radius: 14px; font-size: 15px; color: #334155; line-height: 1.6; }
 .customer-remark-actions { display: flex; gap: 10px; padding-top: 14px; border-top: 1px solid #f1f5f9; }
 .customer-remark-clear-btn,
-.customer-remark-save-btn { flex: 1; height: 42px; line-height: 42px; border-radius: 12px; font-size: 13px; font-weight: 800; }
+.customer-remark-save-btn { flex: 1; height: 44px; line-height: 44px; border-radius: 16px; font-size: 14px; font-weight: 800; }
 .customer-remark-clear-btn { background: #f1f5f9; color: #64748b; }
 .customer-remark-save-btn { background: linear-gradient(135deg, #0f766e, #10b981); color: #fff; box-shadow: 0 8px 16px rgba(16,185,129,.16); }
 .customer-remark-clear-btn::after,
@@ -1801,7 +1844,7 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 .batch-result-field-name { grid-column: 1 / -1; }
 .batch-result-field-label { display: block; font-size: 10px; font-weight: 700; color: #64748b; margin-bottom: 4px; }
 .batch-result-delete-btn { flex-shrink: 0; padding: 6px 10px; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px; font-size: 12px; font-weight: 800; color: #dc2626; }
-.batch-result-submit-btn { width: 100%; height: 46px; margin-top: 14px; background: linear-gradient(135deg, #0f766e, #10b981); color: #fff; border-radius: 16px; font-size: 13px; font-weight: 800; box-shadow: 0 10px 20px rgba(16,185,129,.16); }
+.batch-result-submit-btn { width: 100%; height: 44px; margin-top: 14px; background: linear-gradient(135deg, #0f766e, #10b981); color: #fff; border-radius: 16px; font-size: 14px; font-weight: 800; box-shadow: 0 10px 20px rgba(16,185,129,.16); }
 .batch-result-submit-btn::after { border: none; }
 .btn-disabled { opacity: .5; }
 
@@ -1837,19 +1880,21 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 /* 付款记录明细 */
 .payment-row { padding: 10px 12px; background: #f8fafc; border: 1px solid #e8eef5; border-radius: 12px; margin-bottom: 8px; }
 .payment-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.payment-row-time { font-size: 11px; font-weight: 700; color: #64748b; font-family: monospace; }
-.payment-row-amount { font-size: 14px; font-weight: 900; font-family: monospace; }
+.payment-row-time { font-size: 13px; font-weight: 600; color: #64748b; }
+.payment-row-amount { font-size: 13px; font-weight: 600; margin-top: 2px; }
 .payment-row-body { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
-.payment-row-order { font-size: 11px; color: #475569; font-family: monospace; }
+.payment-row-name { font-size: 13px; font-weight: 600; color: #0f172a; margin-top: 6px; }
+.payment-row-order { font-size: 13px; font-weight: 600; color: #475569; margin-top: 2px; }
 .payment-row-change { font-size: 11px; color: #64748b; font-family: monospace; }
 .payment-row-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.payment-row-remark { font-size: 11px; color: #a78bfa; word-break: break-all; flex: 1; min-width: 0; }
+.payment-row-remark { font-size: 11px; color: #a78bfa; word-break: break-all; flex: 1; min-width: 0; margin-top: 4px; }
+.payment-row-delete-row { display: flex; justify-content: flex-end; margin-top: 6px; }
 .payment-row-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .payment-row-delete {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 20px; height: 20px; border-radius: 50%;
   background: #f1f5f9; border: 1px solid #e2e8f0;
-  color: #94a3b8; font-size: 14px; font-weight: 700; line-height: 1;
+  color: #94a3b8; font-size: 11px; font-weight: 700; line-height: 1;
   transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
 .payment-row-delete:active { background: #fee2e2; color: #dc2626; border-color: #fecaca; }

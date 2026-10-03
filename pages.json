@@ -54,14 +54,7 @@
 			}
 		},
 		{
-			"path": "pages/profile/profile",
-      "style": {
-        "navigationBarTitleText": "个人中心",
-        "enablePullDownRefresh": false
-      }
-    },
-    {
-      "path": "pages/monthly-summary/monthly-summary",
+			"path": "pages/monthly-summary/monthly-summary",
       "style": {
         "navigationBarTitleText": "月度账单汇总",
         "enablePullDownRefresh": false

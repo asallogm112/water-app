@@ -129,7 +129,7 @@
 <style lang="scss">
 	.login-page {
 		min-height: 100vh;
-		background: radial-gradient(circle at top, rgba(16, 185, 129, .14), transparent 34%), linear-gradient(180deg, #fbfffd 0%, #edf5f1 100%);
+		background: linear-gradient(180deg, #f8fbfa 0%, #f2f6f9 100%);
 		display: flex;
 		align-items: stretch;
 		justify-content: flex-start;
@@ -313,11 +313,11 @@
 		background: linear-gradient(135deg, #0f766e, #10b981);
 		color: #fff;
 		border: none;
-		border-radius: 14px;
-		font-size: 16px;
+		border-radius: 16px;
+		font-size:14px;
 		font-weight: 800;
 		margin-top: 4px;
-		box-shadow: 0 8px 18px rgba(16, 185, 129, .18);
+		box-shadow: 0 10px 20px rgba(16,185,129,.16);
 	}
 
 	.btn-login-submit:active {

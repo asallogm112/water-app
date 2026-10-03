@@ -426,7 +426,7 @@ const confirmDelete = () => {
 .settle-tag{font-size:9px;font-weight:800;padding:3px 8px;border-radius:999px}
 .tag-daily{background:#ecfdf5;color:#059669;border:1px solid #d1fae5}
 .tag-monthly{background:#eff6ff;color:#2563eb;border:1px solid #dbeafe}
-.price-box{min-width:72px;text-align:right;flex-shrink:0}.price-label{display:block;font-size:9px;color:#94a3b8}.price-value{display:block;margin-top:2px;font-size:15px;font-weight:900;color:#dc2626;font-family:monospace}
+.price-box{min-width:72px;text-align:right;flex-shrink:0}.price-label{display:block;font-size:9px;color:#94a3b8}.price-value{display:block;margin-top:2px;font-size:15px;font-weight:900;color:#0f172a;font-family:monospace}
 .customer-edit-btn{padding:4px 10px;border-radius:999px;background:#eff6ff;border:1px solid #dbeafe;font-size:10px;font-weight:800;color:#2563eb;line-height:1.2}
 .customer-meta-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-top:14px}
 .meta-item{padding:10px 12px;background:#f8fafc;border:1px solid #e8eef5;border-radius:14px;min-width:0}.meta-item-compact{text-align:left}

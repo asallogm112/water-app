@@ -533,11 +533,11 @@ const navigateToOrderList = (date) => {
 .day-stat-value.text-receivable { color: #dc2626; }
 .day-stat-unit { font-size: 11px; font-weight: 400; color: #94a3b8; }
 
-.export-modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,.42); z-index: 120; display: flex; align-items: flex-start; justify-content: center; padding: 20px 20px 24px; box-sizing: border-box; }
-.export-modal { width: 100%; max-width: 420px; background: #fff; border-radius: 20px; padding: 18px 16px 16px; border: 1px solid rgba(226,232,240,.9); box-shadow: 0 24px 60px rgba(15,23,42,.24); box-sizing: border-box; }
+.export-modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,.52); z-index: 120; display: flex; align-items: flex-start; justify-content: center; padding: 20px 20px 24px; box-sizing: border-box; }
+.export-modal { width: 100%; max-width: 420px; background: #fff; border-radius: 24px; padding: 18px 16px 16px; border: 1px solid rgba(226,232,240,.9); box-shadow: 0 24px 60px rgba(15,23,42,.24); box-sizing: border-box; }
 .export-modal-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; margin-bottom: 12px; }
 .export-modal-title { font-size: 15px; font-weight: 800; color: #1e293b; }
-.export-modal-close { font-size: 12px; font-weight: 700; color: #059669; background: #ecfdf5; padding: 6px 12px; border-radius: 10px; }
+.export-modal-close { font-size: 11px; font-weight: 800; color: #059669; background: #ecfdf5; padding: 7px 12px; border-radius: 999px; }
 .export-option-list { display: flex; flex-direction: column; gap: 8px; }
 .export-option-item { padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 13px; font-weight: 700; color: #334155; }
 

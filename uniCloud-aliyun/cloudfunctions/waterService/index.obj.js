@@ -416,7 +416,10 @@ function sanitizePaymentRecord(record) {
 async function loadPaymentRecords(db) {
 	const data = await fetchAllCollectionData(() => db.collection(PAYMENT_RECORD_COLLECTION)
 		.orderBy('createdAt', 'desc'))
-	return data.map(sanitizePaymentRecord).filter(Boolean)
+	// 逻辑删除：过滤掉已标记删除的记录（云端仍保留数据，便于查账/恢复）
+	return data.filter(item => !item.isDeleted)
+		.map(sanitizePaymentRecord)
+		.filter(Boolean)
 }
 
 function wrapServiceMethods(service) {
@@ -929,9 +932,15 @@ const serviceHandlers = {
 					message: '订单不存在'
 				}
 			}
+			// 防御：调用方若未显式传 actualAmountReceived（如漏传/传 undefined），
+			// 则沿用原订单已付金额，避免“已付订单被清零”的隐患（validateOrderPayload 对 undefined 默认按 0 处理）
+			const incomingData = { ...(orderData || {}) }
+			if (incomingData.actualAmountReceived === undefined) {
+				incomingData.actualAmountReceived = targetOrder.actualAmountReceived || 0
+			}
 			const validation = validateOrderPayload({
 				...targetOrder,
-				...(orderData || {}),
+				...incomingData,
 				createdAt: targetOrder.createdAt,
 				createdDate: targetOrder.createdDate,
 				operator: targetOrder.operator || ''
@@ -978,9 +987,9 @@ const serviceHandlers = {
 						beforeAmount: beforePayment,
 						afterAmount: afterPayment,
 						changeAmount: Number((afterPayment - beforePayment).toFixed(2)),
-						paidDate: formatDateTime(paymentNow).slice(0, 10),
+						paidDate: formatBeijingDateTime(paymentNow).slice(0, 10),
 						remark: normalizeText(payload.notes),
-						createdAt: formatDateTime(paymentNow),
+						createdAt: formatBeijingDateTime(paymentNow),
 						updatedAt: formatDateTime(paymentNow)
 					})
 				} catch (paymentError) {
@@ -1191,7 +1200,11 @@ const serviceHandlers = {
 					message: '记录参数不正确'
 				}
 			}
-			await db.collection(PAYMENT_RECORD_COLLECTION).doc(targetId).remove()
+			// 逻辑删除：仅标记 isDeleted，云端保留数据以便查账/恢复
+			await db.collection(PAYMENT_RECORD_COLLECTION).doc(targetId).update({
+				isDeleted: true,
+				deletedAt: formatDateTime(new Date())
+			})
 			return {
 				success: true
 			}
@@ -1226,7 +1239,7 @@ const serviceHandlers = {
 				changeAmount: Number(changeAmount) || 0,
 				paidDate: normalizeText(paidDate),
 				remark: normalizeText(remark),
-				createdAt: normalizeText(createdAt) || formatDateTime(new Date()),
+				createdAt: normalizeText(createdAt) || formatBeijingDateTime(new Date()),
 				updatedAt: formatDateTime(new Date())
 			})
 			if (!record.userName) {
@@ -1248,6 +1261,14 @@ async test() {
 		}).get()
 		console.log('res: ', res);
 	}
+}
+
+function formatBeijingDateTime(date = new Date()) {
+	// 转为北京时间（东八区），修复云函数默认 UTC 导致付款记录时间偏差 8 小时
+	const utcMs = date.getTime() + date.getTimezoneOffset() * 60000
+	const bj = new Date(utcMs + 8 * 60 * 60 * 1000)
+	const pad = (n) => String(n).padStart(2, '0')
+	return `${bj.getFullYear()}-${pad(bj.getMonth() + 1)}-${pad(bj.getDate())} ${pad(bj.getHours())}:${pad(bj.getMinutes())}:${pad(bj.getSeconds())}`
 }
 
 module.exports = wrapServiceMethods(serviceHandlers)

@@ -171,16 +171,17 @@
 				action: 'customer-list'
 			})
 		}
-		if (state.currentUser?.isAdmin) {
-			items.push({
-				key: 'misc-records',
-				icon: '🗂️',
-				name: '工资报销',
-				desc: '工资报销',
-				iconClass: 'func-icon-amber',
-				action: 'misc-records'
-			})
-		}
+		// 工资报销入口：先隐藏，后续可能整体移除
+		// if (state.currentUser?.isAdmin) {
+		// 	items.push({
+		// 		key: 'misc-records',
+		// 		icon: '🗂️',
+		// 		name: '工资报销',
+		// 		desc: '工资报销',
+		// 		iconClass: 'func-icon-amber',
+		// 		action: 'misc-records'
+		// 	})
+		// }
 		if (state.currentUser?.isAdmin) {
 			items.push({
 				key: 'payment-records',
@@ -191,15 +192,7 @@
 				action: 'payment-records'
 			})
 		}
-		items.push({
-			key: 'profile',
-			icon: '👤',
-			name: '个人中心',
-			desc: '账户信息',
-			iconClass: 'func-icon-rose',
-			action: 'profile'
-		})
-		return items
+			return items
 	})
 
 	const navigate = (tab) => {
@@ -209,7 +202,6 @@
 			'stats': '/pages/stats/stats',
 			'customer-list': '/pages/customer-list/customer-list',
 			'user-add': '/pages/user-add/user-add',
-			'profile': '/pages/profile/profile',
 			'monthly-summary': '/pages/monthly-summary/monthly-summary',
 			'user-monthly-summary': '/pages/user-monthly-summary/user-monthly-summary',
 			'misc-records': '/pages/misc-records/misc-records',
@@ -263,7 +255,7 @@
 		padding: 12px 32px;
 		background: linear-gradient(135deg, #0f766e, #10b981);
 		color: #fff;
-		border-radius: 14px;
+		border-radius: 16px;
 		font-size: 14px;
 		font-weight: 800;
 		box-shadow: 0 10px 20px rgba(16, 185, 129, .16);
@@ -390,8 +382,8 @@
 		left: 12px;
 		right: 12px;
 		bottom: 40px;
-		height: 50px;
-		border-radius: 14px;
+		height: 44px;
+		border-radius: 16px;
 		background: linear-gradient(135deg, #0f766e, #10b981);
 		color: #fff;
 		font-size: 14px;
@@ -404,9 +396,11 @@
 	}
 
 	.menu-section-title {
-		font-size: 9px;
+		font-size: 10px;
 		font-weight: 800;
 		color: #94a3b8;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 		margin-bottom: 10px;

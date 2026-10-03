@@ -48,6 +48,15 @@
 			</view>
 		</view>
 
+		<!-- 来自付款记录的客户筛选提示 -->
+		<view v-if="routeUserName" class="route-filter-banner">
+			<view class="route-filter-main">
+				<text class="route-filter-icon">🔗</text>
+				<text class="route-filter-text">来自付款记录：仅显示「{{ routeUserName }}」</text>
+			</view>
+			<text class="route-filter-clear" @tap="clearRouteUserName">取消</text>
+		</view>
+
 		<!-- 日期选择 -->
 		<view class="date-select">
 			<view class="date-picker-row">
@@ -463,15 +472,24 @@
 		uni.setStorageSync(ORDER_LIST_SELECTED_DATE_KEY, value)
 	}
 
-	// 从 URL 接收 date 参数（月度汇总页面跳转时传入）
+	// 来自付款记录跳转时携带的客户筛选条件（自动筛出该客户，可手动取消）
+	const routeUserName = ref('')
+	const clearRouteUserName = () => {
+		routeUserName.value = ''
+	}
+
+	// 从 URL 接收 date / userName 参数（月账单跳日账单、付款记录跳对应订单时传入）
 	onLoad((options) => {
 		if (options && options.date) {
 			shouldRespectRouteDate.value = true
 			selectedDate.value = options.date
 			persistSelectedDate(options.date)
-			return
+		} else {
+			restoreSelectedDate()
 		}
-		restoreSelectedDate()
+		if (options && options.userName) {
+			routeUserName.value = String(options.userName).trim()
+		}
 	})
 
 	onShow(() => {
@@ -764,6 +782,7 @@
 		return selectedDateOrders.value.filter(order => String(order.userName || '').trim().toLowerCase().includes(keyword))
 	})
 	const filteredOrders = computed(() => selectedDateOrders.value.filter(o => {
+		if (routeUserName.value && String(o.userName || '').trim() !== routeUserName.value) return false
 		return (settlementFilter.value === 'all' || getDisplaySettlementType(o) === settlementFilter.value) &&
 			(paymentFilter.value === 'all' || (paymentFilter.value === 'paid' ? isPaid(o) : !isPaid(o)))
 	}))
@@ -967,7 +986,7 @@
 	// 提交中状态：防重复点击，并让用户明确知道点击已生效
 	// 注意：不使用 <button :disabled>——安卓上该属性从禁用切回可用后，按钮可能仍无法点击
 	const batchOrderSubmitting = ref(false)
-	const batchOrderSubmitText = computed(() => batchOrderSubmitting.value ? '提交中，请稍候…' : `提交这 ${submittableBatchOrderItems.length} 笔订单`)
+	const batchOrderSubmitText = computed(() => batchOrderSubmitting.value ? '提交中，请稍候…' : `提交这 ${submittableBatchOrderItems.value.length} 笔订单`)
 	// 统一错误反馈：弹窗内横幅 + 屏幕 toast（提交按钮在滚动区底部，单靠顶部横幅用户可能看不到）
 	const notifyBatchOrderError = (message) => {
 		batchOrderError.value = message
@@ -1621,7 +1640,7 @@
 	.filter-overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(15, 23, 42, .42);
+		background: rgba(15, 23, 42, .52);
 		z-index: 50;
 		display: flex;
 		align-items: flex-start;
@@ -1969,12 +1988,12 @@
 
 	.batch-result-submit-btn {
 		width: 100%;
-		height: 46px;
+		height: 44px;
 		margin-top: 14px;
 		background: linear-gradient(135deg, #0f766e, #10b981);
 		color: #fff;
 		border-radius: 16px;
-		font-size: 13px;
+		font-size: 14px;
 		font-weight: 800;
 		display: flex;
 		align-items: center;
@@ -2075,7 +2094,7 @@
 	.filter-panel,
 	.date-panel {
 		background: #fff;
-		border-radius: 20px;
+		border-radius: 24px;
 		padding: 18px;
 		width: 100%;
 		max-width: 380px;
@@ -2107,12 +2126,12 @@
 	}
 
 	.filter-header-close {
-		font-size: 12px;
-		font-weight: 700;
+		font-size: 11px;
+		font-weight: 800;
 		color: #059669;
 		background: #ecfdf5;
-		padding: 6px 12px;
-		border-radius: 10px;
+		padding: 7px 12px;
+		border-radius: 999px;
 		flex-shrink: 0
 	}
 
@@ -2853,5 +2872,47 @@
 		border-radius: 999px;
 		font-size: 12px;
 		font-weight: 600
+	}
+
+	.route-filter-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		margin: 0 0 12px;
+		padding: 10px 14px;
+		background: #eff6ff;
+		border: 1px solid #bfdbfe;
+		border-radius: 14px;
+		box-shadow: 0 6px 16px rgba(15, 23, 42, .04)
+	}
+	.route-filter-main {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		flex: 1;
+		overflow: hidden
+	}
+	.route-filter-icon {
+		font-size: 13px;
+		flex-shrink: 0
+	}
+	.route-filter-text {
+		font-size: 12px;
+		font-weight: 700;
+		color: #1d4ed8;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis
+	}
+	.route-filter-clear {
+		flex-shrink: 0;
+		font-size: 11px;
+		font-weight: 800;
+		color: #1d4ed8;
+		background: #dbeafe;
+		padding: 5px 12px;
+		border-radius: 999px
 	}
 </style>
