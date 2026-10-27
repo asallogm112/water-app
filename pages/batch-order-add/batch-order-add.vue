@@ -623,7 +623,8 @@ const finalOrders = submittableItems.value.map((item, index) => {
         beforeAmount: 0,
         afterAmount: Number(item.actualAmountReceived),
         changeAmount: Number(item.actualAmountReceived),
-        paidDate: item.customDate,
+        // 付款记录的「时间」必须是记录创建的当前日期时间，不能用订单的 MMDD 日期
+        paidDate: store.formatBeijingDateTime(new Date()),
         remark: '',
         createdAt: store.formatBeijingDateTime(new Date())
       })

@@ -1508,7 +1508,8 @@ const submitBatchAddOrders = async () => {
       beforeAmount: 0,
       afterAmount: Number(item.actualAmountReceived),
       changeAmount: Number(item.actualAmountReceived),
-      paidDate: item.createdDate,
+      // 付款记录的「时间」必须是记录创建的当前日期时间，不能用订单的 MMDD 日期
+      paidDate: formatBeijingDateTime(new Date()),
       remark: '',
       createdAt: formatBeijingDateTime(new Date())
     })
