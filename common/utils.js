@@ -70,9 +70,12 @@ export function getOrderUnitPrice(order, usersOrMap = []) {
 }
 
 export function getOrderReceivableAmount(order, usersOrMap = []) {
+  const quantity = Number(order?.quantity || 0)
+  // 送水数为 0（纯付款 / 0 0 X）应收必为 0，必须最先判定：
+  // 否则下方「未知客户回退实收金额」分支会先 return 实收，把付款金额错误计入应收
+  if (!Number.isFinite(quantity) || quantity <= 0) return 0
   const userName = String(order?.userName || '').trim()
   const unitPriceMap = usersOrMap instanceof Map ? usersOrMap : createUserUnitPriceMap(usersOrMap)
-  const quantity = Number(order?.quantity || 0)
   const orderUnitPrice = Number(order?.unitPrice)
   const mappedPrice = unitPriceMap.get(userName)
   const usesUnknownUserDefaultPrice = (!Number.isFinite(orderUnitPrice) || orderUnitPrice <= 0) &&
@@ -82,7 +85,6 @@ export function getOrderReceivableAmount(order, usersOrMap = []) {
     if (actual > 0) return actual
   }
   const unitPrice = getOrderUnitPrice(order, unitPriceMap)
-  if (!Number.isFinite(quantity) || quantity <= 0) return 0
   return roundMoney(quantity * unitPrice)
 }
 
