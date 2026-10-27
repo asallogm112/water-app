@@ -2,8 +2,8 @@
     "name" : "water-app",
     "appid" : "__UNI__3C77655",
     "description" : "",
-    "versionName" : "v261027",
-    "versionCode" : "261027",
+    "versionName" : "1.0 正式版",
+    "versionCode" : "100",
     "transformPx" : false,
     /* 5+App特有相关 */
     "app-plus" : {
