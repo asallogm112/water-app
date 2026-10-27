@@ -134,7 +134,7 @@ import { useStore } from '../../common/store.js'
 import { formatMoney, isPotentialName, normalizeRecognizedOrderText, parseCompactOrderSegments } from '../../common/utils.js'
 
 const store = useStore()
-const { state, addOrders } = store
+const { state, addOrders, createPaymentRecord } = store
 const DAY_PICKER_MONTH_RANGE = 3
 const BATCH_ORDER_SELECTED_DATE_KEY = 'batch_order_selected_date'
 
@@ -232,6 +232,18 @@ onShow(() => {
   restoreSelectedDate()
 })
 
+// 短期日期 token：MMDD（如 1027 → 当年 10月27）或 YYYY-MM-DD；用于录入订单行内指定日期
+const currentYear = computed(() => String(new Date().getFullYear()))
+const normalizeShortDateToken = (value) => {
+  const text = String(value || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  if (!/^\d{4}$/.test(text)) return ''
+  const month = Number(text.slice(0, 2))
+  const day = Number(text.slice(2, 4))
+  if (month < 1 || month > 12 || day < 1 || day > 31) return ''
+  return `${currentYear.value}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 const formatOrderPreviewLine = (item) => {
   if (!item) return ''
   return [
@@ -307,6 +319,8 @@ const handleParse = (showError = true) => {
     const settlementType = matchedUser ? matchedUser.settlementType : 'daily'
     const totalAmount = Number((quantity * finalUnitPrice).toFixed(2))
     const finalActualAmount = actualAmountTouched ? Number(actualAmountReceived) : 0
+    // 纯付款：送水 0 且 回桶 0 且 实收 > 0（如 0 0 220）→ 不计入应收，仅记实收/付款
+    const isPayment = (Number(quantity) === 0 && Number(returnedBuckets) === 0 && Number(finalActualAmount) > 0)
     return {
       id: `parsed-${Date.now()}-${lineIdx}-${Math.random().toString(36).substr(2,4)}`,
       userName,
@@ -318,17 +332,25 @@ const handleParse = (showError = true) => {
       actualAmountReceived: finalActualAmount,
       actualAmountTouched: !!actualAmountTouched,
       settlementType,
-      customDate: activeDate,
+      customDate: customDate || activeDate,
+      isPayment,
       notes: '',
       expanded: false
     }
   }
 
-  const parseChunk = (userName, tokens, lineIdx, customDate) => {
+  const parseChunk = (userName, tokens, lineIdx, fallbackDate) => {
+    // 行内可选日期前缀：前导 4 位数字且形如 MMDD（如 1027 → 当年 10月27）→ 作为该行日期
+    let customDate = fallbackDate
+    let bodyTokens = tokens
+    if (tokens.length && normalizeShortDateToken(tokens[0])) {
+      customDate = normalizeShortDateToken(tokens[0])
+      bodyTokens = tokens.slice(1)
+    }
     let quantity = 0, returnedBuckets = 0, actualAmountReceived = 0, hasExplicitAmount = false
     let quantityAssigned = false, returnedBucketsAssigned = false
     const positionalNumbers = []
-    tokens.some(token => {
+    bodyTokens.some(token => {
       const slashMatch = String(token || '').trim().match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+(?:\.\d+)?))?$/)
       if (!slashMatch) return false
       quantity = parseFloat(slashMatch[1]) || 0
@@ -342,7 +364,7 @@ const handleParse = (showError = true) => {
       return true
     })
     const numberMatches = []
-    tokens.forEach((t, i) => { const m = t.match(/\d+(\.\d+)?/); if (m) numberMatches.push({ num: parseFloat(m[0]), token: t, index: i }) })
+    bodyTokens.forEach((t, i) => { const m = t.match(/\d+(\.\d+)?/); if (m) numberMatches.push({ num: parseFloat(m[0]), token: t, index: i }) })
     const classified = new Set()
 
     numberMatches.forEach((m, idx) => {
@@ -392,7 +414,7 @@ const handleParse = (showError = true) => {
     const finalUnitPrice = matchedUser ? matchedUser.unitPrice : 0
     const settlementType = matchedUser ? matchedUser.settlementType : 'daily'
 
-    if (!quantityAssigned || !returnedBucketsAssigned) return buildParsedItem({ userName, quantity: 0, returnedBuckets: 0, customDate: activeDate, lineIdx, actualAmountReceived: 0, actualAmountTouched: false })
+    if (!quantityAssigned || !returnedBucketsAssigned) return buildParsedItem({ userName, quantity: 0, returnedBuckets: 0, customDate, lineIdx, actualAmountReceived: 0, actualAmountTouched: false })
     if (!hasExplicitAmount) actualAmountReceived = 0
 
     return {
@@ -400,7 +422,8 @@ const handleParse = (showError = true) => {
       userName, matchedUserId: matchedUser?._id,
       quantity, returnedBuckets, unitPrice: 0,
       totalAmount: Number((quantity * finalUnitPrice).toFixed(2)),
-      actualAmountReceived, actualAmountTouched: hasExplicitAmount, settlementType, customDate: activeDate, notes: '', expanded: false
+      actualAmountReceived, actualAmountTouched: hasExplicitAmount, settlementType, customDate, notes: '', expanded: false,
+      isPayment: (Number(quantity) === 0 && Number(returnedBuckets) === 0 && Number(actualAmountReceived) > 0)
     }
   }
 
@@ -544,6 +567,8 @@ const finalOrders = submittableItems.value.map((item, index) => {
     const order = {
       createdAt: store.formatBeijingDateTime(itemTime),
       createdDate: itemDateStr,
+      // 付款订单：记账日 = MMDD（如 1027→10月27，用于应收/实收归集）；显示日 = 录入当天（selectedDate），使其在订单列表显示在录入那天
+      displayDate: item.isPayment ? selectedDate.value : itemDateStr,
       userName: item.userName.trim(),
       quantity: Number(item.quantity), returnedBuckets: Number(item.returnedBuckets),
       operator: state.currentUser?.userName || '',
@@ -563,6 +588,7 @@ const finalOrders = submittableItems.value.map((item, index) => {
 
   submitting.value = true
   try {
+    const beforeOrderIds = new Set(state.orders.map(o => o._id))
     const result = await addOrders(finalOrders)
     if (!result?.success) {
       const message = result?.message || '批量保存失败，请稍后重试'
@@ -576,11 +602,42 @@ const finalOrders = submittableItems.value.map((item, index) => {
     }
     successCount.value = Number(result.addedCount || result.count || finalOrders.length) || 0
     skippedCount.value = 0
+    // 付款记录：对纯付款项（送水 0 且 回桶 0 且 实收 > 0）额外生成收款流水
+    // 仅在本批次新建订单中匹配，且每笔付款独占一个订单，避免同额/历史订单被重复关联
+    const newOrders = state.orders.filter(o => !beforeOrderIds.has(o._id))
+    const usedOrderIds = new Set()
+    const paymentItems = submittableItems.value.filter(item => item.isPayment)
+    for (const item of paymentItems) {
+      const matchedOrder = newOrders.find(o =>
+        !usedOrderIds.has(o._id) &&
+        String(o.userName || '') === String(item.userName) &&
+        String(o.createdDate || '') === String(item.customDate) &&
+        Number(o.quantity) === 0 && Number(o.returnedBuckets) === 0 &&
+        Number(o.actualAmountReceived) === Number(item.actualAmountReceived)
+      )
+      if (matchedOrder) usedOrderIds.add(matchedOrder._id)
+      const payRes = await createPaymentRecord({
+        userName: item.userName,
+        orderId: matchedOrder?._id || '',
+        orderDate: item.customDate,
+        beforeAmount: 0,
+        afterAmount: Number(item.actualAmountReceived),
+        changeAmount: Number(item.actualAmountReceived),
+        paidDate: item.customDate,
+        remark: '',
+        createdAt: store.formatBeijingDateTime(new Date())
+      })
+      if (!payRes.success) uni.showToast({ title: `付款记录生成失败：${payRes?.message || ''}`, icon: 'none' })
+    }
     submittedOrders.value = finalOrders
     skippedDuplicateOrders.value = []
     items.value = []
     success.value = true
-    uni.showToast({ title: `已提交 ${successCount.value} 笔订单`, icon: 'none', duration: 2000 })
+    uni.showToast({
+      title: `已提交 ${successCount.value} 笔订单${paymentItems.length ? `，${paymentItems.length} 笔付款记录` : ''}`,
+      icon: 'none',
+      duration: 2000
+    })
     setTimeout(() => { success.value = false }, 1500)
   } catch (submitError) {
     const message = submitError?.message || String(submitError || '提交失败')

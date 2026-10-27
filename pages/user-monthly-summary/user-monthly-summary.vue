@@ -142,7 +142,7 @@
           <view v-if="isOrderMonthExpanded(mg.month)" class="month-orders">
               <view v-for="ord in mg.orders" :key="ord._id" class="order-item">
               <view class="order-item-header">
-                <text class="order-item-date">{{ ord.createdDate }}</text>
+                <text class="order-item-date">{{ ord.displayDate || ord.createdDate }}</text>
                 <text class="order-item-price">单价: ¥{{ formatMoney(getUnitPrice(ord)) }}/桶</text>
                 <view v-if="canManageData" class="order-item-edit-btn" @tap="openEditModal(ord)">
                   <text>编辑</text>
@@ -1132,7 +1132,7 @@ const customerStats = computed(() => {
 const dailySummaryList = computed(() => {
   const groups = {}
   filteredOrders.value.forEach(ord => {
-    const dateKey = String(ord.createdDate || '').trim()
+    const dateKey = String(ord.displayDate || ord.createdDate || '').trim()
     if (!dateKey) return
     if (!groups[dateKey]) {
       groups[dateKey] = {
@@ -1466,6 +1466,8 @@ const submitBatchAddOrders = async () => {
     orders.push({
       createdAt: formatBeijingDateTime(new Date()),
       createdDate,
+      // 付款订单：记账日 = MMDD（createdDate，用于应收/实收归集）；展示日 = 录入当天（displayDate），使其在按人对账/订单列表显示在录入那天
+      displayDate: item.isPayment ? formatDate(new Date()) : createdDate,
       userName,
       quantity,
       returnedBuckets,

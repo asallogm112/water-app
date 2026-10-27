@@ -775,7 +775,10 @@
 		return shortMatch ? shortMatch[1] : text.slice(0, 10)
 	}
 
-	const selectedDateOrders = computed(() => sortOrdersForDisplay(state.orders.filter(o => selectedDate.value ? normalizeOrderDateValue(o.createdDate) === selectedDate.value : true)))
+	// 显示按「展示日」：付款订单 displayDate=录入当天，其余回退 createdDate（MMDD/记账日）
+	const selectedDateOrders = computed(() => sortOrdersForDisplay(state.orders.filter(o => selectedDate.value ? normalizeOrderDateValue(o.displayDate || o.createdDate) === selectedDate.value : true)))
+	// 财务汇总按「记账日」createdDate 归集：付款订单虽展示在录入当天，但其款项仍计入 MMDD 那天，避免重复记账
+	const accountingOrders = computed(() => sortOrdersForDisplay(state.orders.filter(o => selectedDate.value ? normalizeOrderDateValue(o.createdDate) === selectedDate.value : true)))
 	const searchedOrders = computed(() => {
 		const keyword = String(searchKeyword.value || '').trim().toLowerCase()
 		if (!keyword) return []
@@ -786,15 +789,21 @@
 		return (settlementFilter.value === 'all' || getDisplaySettlementType(o) === settlementFilter.value) &&
 			(paymentFilter.value === 'all' || (paymentFilter.value === 'paid' ? isPaid(o) : !isPaid(o)))
 	}))
+	// 汇总集合：按记账日 createdDate 归集（付款订单的款项计入 MMDD 那天，不会因展示在录入日而重复计入）
+	const accountingFilteredOrders = computed(() => accountingOrders.value.filter(o => {
+		if (routeUserName.value && String(o.userName || '').trim() !== routeUserName.value) return false
+		return (settlementFilter.value === 'all' || getDisplaySettlementType(o) === settlementFilter.value) &&
+			(paymentFilter.value === 'all' || (paymentFilter.value === 'paid' ? isPaid(o) : !isPaid(o)))
+	}))
 
-	const dailySettleSum = computed(() => filteredOrders.value.filter(o => getDisplaySettlementType(o) === 'daily').reduce((s, o) =>
+	const dailySettleSum = computed(() => accountingFilteredOrders.value.filter(o => getDisplaySettlementType(o) === 'daily').reduce((s, o) =>
 		s + getReceivableAmount(o), 0))
-	const monthlySettleSum = computed(() => filteredOrders.value.filter(o => getDisplaySettlementType(o) === 'monthly').reduce((s,
+	const monthlySettleSum = computed(() => accountingFilteredOrders.value.filter(o => getDisplaySettlementType(o) === 'monthly').reduce((s,
 		o) => s + getReceivableAmount(o), 0))
-	const totalAmountSum = computed(() => filteredOrders.value.reduce((s, o) => s + getReceivableAmount(o), 0))
-	const totalActualSum = computed(() => filteredOrders.value.reduce((s, o) => s + getActualPaidAmount(o), 0))
-	const totalDeliveredSum = computed(() => filteredOrders.value.reduce((s, o) => s + o.quantity, 0))
-	const totalReturnedSum = computed(() => filteredOrders.value.reduce((s, o) => s + o.returnedBuckets, 0))
+	const totalAmountSum = computed(() => accountingFilteredOrders.value.reduce((s, o) => s + getReceivableAmount(o), 0))
+	const totalActualSum = computed(() => accountingFilteredOrders.value.reduce((s, o) => s + getActualPaidAmount(o), 0))
+	const totalDeliveredSum = computed(() => accountingFilteredOrders.value.reduce((s, o) => s + o.quantity, 0))
+	const totalReturnedSum = computed(() => accountingFilteredOrders.value.reduce((s, o) => s + o.returnedBuckets, 0))
 	const buildDaySummarySheetRows = () => {
 		const headerRow = [
 			{ value: '客户', style: 'header' },
@@ -806,9 +815,6 @@
 		const rows = [
 			[{ value: `${selectedDate.value} 日账单汇总`, style: 'title' }],
 			['总发水', totalDeliveredSum.value],
-			['总回桶', totalReturnedSum.value],
-			['日结总金额', dailySettleSum.value],
-			['月结总金额', monthlySettleSum.value],
 			['应收总金额', totalAmountSum.value],
 			['实收总金额', totalActualSum.value],
 			['', '', '', '', '']

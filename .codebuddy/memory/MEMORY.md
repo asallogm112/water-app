@@ -65,3 +65,13 @@
   - 非拉水回桶的备注（纯文字、无法判定）→ 直接显示备注原文
   - 颜色=盈亏语义（客户少记拉水=红亏钱，客户少记回桶=绿占便宜）；"多记/少记"文案
   - 能解析且差值全 0 → 不显示（数据没问题）
+
+## 录入订单 / 按人对账 纯付款语义（2026-10-27 定规）
+- 录入订单（`batch-order-add.vue`）与按人对账批量录入（`user-monthly-summary.vue`）已统一：
+  - 订单行格式 `客户名 MMDD 数量 回桶 金额`：前导 4 位数字且形如 MMDD（如 `1027` = 当年 10月27）为**行内日期前缀**；也可 `客户名 数量 回桶 金额` 用页面日期选择器日期
+  - 录入订单页原本没有这套，是 2026-10-27 对齐到按人对账页逻辑补上的（按人对账页早就有 `isPayment` 判定 + `createPaymentRecord`）
+- `0 0 220` / `220` / `0926 0 0 220` 这类「送水 0 且 回桶 0 且 实收 > 0」判定为**纯付款**（`isPayment`）
+- 纯付款：`quantity=0` → 应收金额 `getOrderReceivableAmount` 在 `quantity<=0` 时返回 0，所以 220 **只进「实收/已付」，绝不进应收**（用户红线：不要把付款金额记到应收里）
+- 提交时，纯付款项额外 `createPaymentRecord` 生成一条收款流水（付款记录页 / 按人对账可读），成功提示含「N 笔付款记录」
+- 普通订单（数量>0）必须写日期否则拦截；纯付款没写日期默认用页面所选日期
+- **双日期规则（2026-10-27 补充，用户红线）**：纯付款订单 `createdDate`=MMDD（记账日，用于应收/实收归集），`displayDate`=录入当天（selectedDate / 录入时 `formatDate(new Date())`，用于展示）。需求：输入 `1027 0 0 220` → (A) 10月27日 实收 +220（记账日归集，订单 actualAmountReceived 保持 220 不修改）；(B) 该记录在订单列表 + 按人对账都显示在「录入当天」，如 10月29号录入就显示在 10月29号。实现：订单列表页 `selectedDateOrders` 显示筛选用 `displayDate||createdDate`，财务汇总改用按 `createdDate` 归集的 `accountingFilteredOrders`；按人对账页屏显订单日期标签用 `displayDate||createdDate`、导出「按天」汇总分组用 `displayDate||createdDate`（按天实收仍用 `createdDate===item.date` 归集）。两页都避免录入日与记账日重复记账。
