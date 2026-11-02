@@ -73,6 +73,9 @@
 - `0 0 220` / `220` / `0926 0 0 220` 这类「送水 0 且 回桶 0 且 实收 > 0」判定为**纯付款**（`isPayment`）
 - 纯付款：`quantity=0` → 应收金额必须为 0（=0×单价），220 **只进「实收/已付」，绝不进应收**（用户红线）。⚠️ 见 `feedback_payment_receivable.md`：`getOrderReceivableAmount` 中 `quantity<=0 return 0` 必须放在最前，优先于「未知客户回退实收」分支——否则无单价客户输 `0 0 100` 会把实收100误当应收（2026-10-27 已踩坑修复）
 - ⚠️ 见 `feedback_payment_record_time.md`：付款记录 `paidDate` 必须=记录创建的当前日期时间(年月日-时分秒)，绝不能用关联订单的 MMDD 日期（2026-10-27 用户踩坑：付款记录页顶部显示成了订单日期）
+- ⚠️ 见 `feedback_communicate_changes.md`：每次改完必须明确告知用户改了哪些文件/逻辑/自测结果，不能只说“已修复”（2026-10-31 用户硬性要求）
+- ⚠️ 见 `feedback_payment_independent.md`：付款记录是**独立记录**，绝不改水单；应收来自水单(数量×单价)、实收来自付款、剩=应收−实收。用户 2026-11-02 确认“这就是我这样设计的”（曾误以为付款会去标记/改水单）
+- ⚠️ 录入订单页 `0 0 220`(纯付款) 解析坑：解析器把每行首个 token 当客户名，`0 0 220` 首 token「0」被误吞成名字、220 落入回桶。修复：行首非名字 token 继承上一行客户名(`prevChunkUserName`)；无前置客户名时清晰报错「必须填写客户姓名」。日期默认=今天已满足。
 - 提交时，纯付款项额外 `createPaymentRecord` 生成一条收款流水（付款记录页 / 按人对账可读），成功提示含「N 笔付款记录」
 - 普通订单（数量>0）必须写日期否则拦截；纯付款没写日期默认用页面所选日期
 - **双日期规则（2026-10-27 补充，用户红线）**：纯付款订单 `createdDate`=MMDD（记账日，用于应收/实收归集），`displayDate`=录入当天（selectedDate / 录入时 `formatDate(new Date())`，用于展示）。需求：输入 `1027 0 0 220` → (A) 10月27日 实收 +220（记账日归集，订单 actualAmountReceived 保持 220 不修改）；(B) 该记录在订单列表 + 按人对账都显示在「录入当天」，如 10月29号录入就显示在 10月29号。实现：订单列表页 `selectedDateOrders` 显示筛选用 `displayDate||createdDate`，财务汇总改用按 `createdDate` 归集的 `accountingFilteredOrders`；按人对账页屏显订单日期标签用 `displayDate||createdDate`、导出「按天」汇总分组用 `displayDate||createdDate`（按天实收仍用 `createdDate===item.date` 归集）。两页都避免录入日与记账日重复记账。

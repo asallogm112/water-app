@@ -1194,32 +1194,6 @@ const buildCustomerSummarySheetRows = () => {
   }
 }
 
-const buildCustomerDetailSheetRows = () => {
-  const rows = [[
-    '月份', '日期', '客户', '结算方式', '单价', '数量', '回桶', '应收', '实收', '备注'
-  ]]
-  monthlyGroups.value.forEach(group => {
-    group.orders.forEach(order => {
-      rows.push([
-        formatMonth(group.month),
-        order.createdDate || '',
-        order.userName || '',
-        order.settlementType === 'monthly' ? '月结' : '日结',
-        Number(getUnitPrice(order)) || 0,
-        Number(order.quantity) || 0,
-        Number(order.returnedBuckets) || 0,
-        Number(getReceivableAmount(order)) || 0,
-        Number(getActualAmount(order)) || 0,
-        order.notes || ''
-      ])
-    })
-  })
-  return {
-    rows,
-    columnWidths: [12, 16, 12, 10, 10, 10, 10, 10, 10, 16]
-  }
-}
-
 // 备注对账表格：日期 / 项目 / 我的数量 / 客户名称 / 客户数量 / 差值 / 对账结果
 // 颜色逻辑与页面备注一致：tone='red' 红（我们亏钱），tone='green' 绿（我们占便宜）
 // 排序：先所有拉水，再所有回桶；同项目内按时间升序
@@ -1278,8 +1252,7 @@ const handleExportOption = (type) => {
         ? `${activeCustomerDisplayName.value}-对账单`
         : `${activeCustomerDisplayName.value}-${selectedMonth.value}-对账单`,
       sheets: [
-        { name: '汇总', ...buildCustomerSummarySheetRows() },
-        { name: '明细', ...buildCustomerDetailSheetRows() }
+        { name: '汇总', ...buildCustomerSummarySheetRows() }
       ]
     }).then(showExcelPreviewShareActions).catch(() => {})
     return

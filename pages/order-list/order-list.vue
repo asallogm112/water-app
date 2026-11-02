@@ -175,7 +175,7 @@
 					</view>
 					<view class="day-stat day-stat-blue">
 						<text class="day-stat-label">当日已付</text>
-						<text class="day-stat-value text-emerald">¥{{ formatMoney(getActualPaidAmount(order)) }}</text>
+						<text class="day-stat-value" :class="isPaymentOrder(order) ? 'text-receivable' : 'text-emerald'">¥{{ formatMoney(getActualPaidAmount(order)) }}</text>
 					</view>
 				</view>
 
@@ -350,7 +350,7 @@
 							</view>
 							<view class="search-order-meta">
 								<text class="text-receivable">应收: ¥{{ formatMoney(getReceivableAmount(order)) }}</text>
-								<text :class="getActualPaidAmount(order) >= getReceivableAmount(order) ? 'text-emerald' : 'text-red'">实收: ¥{{ formatMoney(getActualPaidAmount(order)) }}</text>
+								<text :class="isPaymentOrder(order) ? 'text-receivable' : (getActualPaidAmount(order) >= getReceivableAmount(order) ? 'text-emerald' : 'text-red')">实收: ¥{{ formatMoney(getActualPaidAmount(order)) }}</text>
 							</view>
 							<view v-if="order.notes" class="search-order-notes"><text>备注: {{ order.notes }}</text></view>
 						</view>
@@ -651,6 +651,8 @@
 	]
 	const isPaid = (order) => getOrderActualReceivedAmount(order) > 0
 	const getActualPaidAmount = (order) => getOrderActualReceivedAmount(order)
+	// 付款记录：纯付款（数量0、回桶0、实收>0），如 0 0 220；用于把这类行在列表里标红
+	const isPaymentOrder = (order) => Number(order?.quantity) === 0 && Number(order?.returnedBuckets) === 0 && Number(order?.actualAmountReceived) > 0
 	const getUnitPrice = (order) => getOrderUnitPrice(order, userUnitPriceMap.value)
 	const getReceivableAmount = (order) => {
 		const receivable = getOrderReceivableAmount(order, userUnitPriceMap.value)
@@ -902,36 +904,13 @@
 			]
 		}
 	}
-	const buildDayDetailSheetRows = () => {
-		const rows = [[
-			'日期', '客户', '结算方式', '单价', '数量', '回桶', '应收', '实收', '备注'
-		]]
-		filteredOrders.value.forEach(order => {
-			rows.push([
-				selectedDate.value,
-				order.userName || '',
-				getDisplaySettlementType(order) === 'monthly' ? '月结' : '日结',
-				Number(getUnitPrice(order)) || 0,
-				Number(order.quantity) || 0,
-				Number(order.returnedBuckets) || 0,
-				Number(getReceivableAmount(order)) || 0,
-				Number(getActualPaidAmount(order)) || 0,
-				order.notes || ''
-			])
-		})
-		return {
-			rows,
-			columnWidths: [16, 12, 10, 10, 10, 10, 10, 10, 16]
-		}
-	}
 	const handleExportOption = (type) => {
 		showExportModal.value = false
 		if (type === 'excel') {
 			exportExcelWorkbook({
 				fileName: `${selectedDate.value}-日账单`,
 				sheets: [
-					{ name: '汇总', ...buildDaySummarySheetRows() },
-					{ name: '明细', ...buildDayDetailSheetRows() }
+					{ name: '汇总', ...buildDaySummarySheetRows() }
 				]
 			}).then(showExcelPreviewShareActions).catch(() => {})
 			return

@@ -286,10 +286,9 @@ const buildMonthlySummarySheetRows = () => {
     [{ value: title, style: 'title' }],
     ['总发水', stats.value.totalQuantity],
     ['总回桶', stats.value.totalReturnedBuckets],
+    ['总欠桶', stats.value.totalQuantity - stats.value.totalReturnedBuckets],
     ['总应收', stats.value.totalReceivable],
     ['总实收', stats.value.totalActualReceived],
-    ['日结应收', stats.value.dailyReceivable],
-    ['月结应收', stats.value.monthlyReceivable],
     ['', '', '', '', ''],
     headerRow
   ]
@@ -330,56 +329,13 @@ const buildMonthlySummarySheetRows = () => {
   }
 }
 
-const buildMonthlyDetailSheetRows = () => {
-  const formatRemarkForExcel = (value) => {
-    const text = String(value || '').trim()
-    if (!text) return ''
-    let displayLength = 0
-    let result = ''
-    for (const char of text) {
-      const charLength = /[\u0000-\u00ff]/.test(char) ? 1 : 2
-      if (displayLength + charLength > 24) {
-        return `${result}...`
-      }
-      result += char
-      displayLength += charLength
-    }
-    return result
-  }
-  const rows = [[
-    '月份', '日期', '客户', '结算方式', '数量', '回桶', '应收', '实收', '备注'
-  ]]
-  sortedMonthGroups.value.forEach(group => {
-    getSortedDays(group).forEach(day => {
-      day.orders.forEach(order => {
-        rows.push([
-          formatMonth(group.month),
-          order.createdDate || '',
-          order.userName || '',
-          order.settlementType === 'monthly' ? '月结' : '日结',
-          Number(order.quantity) || 0,
-          Number(order.returnedBuckets) || 0,
-          Number(getReceivableAmount(order)) || 0,
-          Number(getActualAmount(order)) || 0,
-          formatRemarkForExcel(order.notes)
-        ])
-      })
-    })
-  })
-  return {
-    rows,
-    columnWidths: [12, 16, 12, 10, 10, 10, 10, 10, 24]
-  }
-}
-
 const handleExportOption = (type) => {
   showExportModal.value = false
   if (type === 'excel') {
     exportExcelWorkbook({
       fileName: selectedMonth.value === 'ALL' ? '月账单汇总' : `${selectedMonth.value}-月账单`,
       sheets: [
-        { name: '汇总', ...buildMonthlySummarySheetRows() },
-        { name: '明细', ...buildMonthlyDetailSheetRows() }
+        { name: '汇总', ...buildMonthlySummarySheetRows() }
       ]
     }).then(showExcelPreviewShareActions).catch(() => {})
     return

@@ -427,6 +427,7 @@ const handleParse = (showError = true) => {
     }
   }
 
+  let prevChunkUserName = ''
   lines.forEach((line, lineIdx) => {
     const trimmedLine = line.trim(); if (!trimmedLine) return
     const textToParse = trimmedLine
@@ -435,6 +436,7 @@ const handleParse = (showError = true) => {
     const compactSegments = parseCompactOrderSegments(textToParse)
     if (compactSegments.length > 0) {
       compactSegments.forEach((segment, segmentIdx) => {
+        prevChunkUserName = segment.name
         parsedItems.push(buildParsedItem({
             userName: segment.name,
             quantity: segment.quantity,
@@ -453,15 +455,18 @@ const handleParse = (showError = true) => {
     let currentChunk = null
     tokens.forEach(token => {
       if (isPotentialName(token, systemUserNames)) {
-        if (currentChunk) parsedItems.push(parseChunk(currentChunk.userName, currentChunk.tokens, lineIdx, activeDate))
+        if (currentChunk) parsedItems.push(parseChunk(currentChunk.userName || prevChunkUserName, currentChunk.tokens, lineIdx, activeDate))
         currentChunk = { userName: token.replace(/[\(\)（）:,，：]/g, ''), tokens: [] }
+        prevChunkUserName = currentChunk.userName
       } else if (currentChunk) {
         currentChunk.tokens.push(token)
       } else {
-        currentChunk = { userName: token.replace(/[\(\)（）:,，：]/g, ''), tokens: [] }
+        // 行首不是名字（如纯付款 0 0 220）：继承上一行的客户名，避免把数字误当名字吃掉
+        currentChunk = { userName: prevChunkUserName, tokens: [token] }
+        if (currentChunk.userName) prevChunkUserName = currentChunk.userName
       }
     })
-    if (currentChunk) parsedItems.push(parseChunk(currentChunk.userName, currentChunk.tokens, lineIdx, activeDate))
+    if (currentChunk) parsedItems.push(parseChunk(currentChunk.userName || prevChunkUserName, currentChunk.tokens, lineIdx, activeDate))
   })
 
   if (parsedItems.length === 0) {
