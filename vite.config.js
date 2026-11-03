@@ -9,9 +9,11 @@ function createBuildInfo() {
   const now = new Date()
   const buildTime = `${now.getFullYear()}-${formatPart(now.getMonth() + 1)}-${formatPart(now.getDate())} ${formatPart(now.getHours())}:${formatPart(now.getMinutes())}:${formatPart(now.getSeconds())}`
   const buildId = `${now.getFullYear()}${formatPart(now.getMonth() + 1)}${formatPart(now.getDate())}-${formatPart(now.getHours())}${formatPart(now.getMinutes())}${formatPart(now.getSeconds())}`
+  const buildTag = `v${formatPart(now.getMonth() + 1)}${formatPart(now.getDate())}${formatPart(now.getHours())}${formatPart(now.getMinutes())}`
   return {
     buildTime,
     buildId,
+    buildTag,
     displayText: `build ${buildId}`,
     fullText: `${buildTime} / ${buildId}`
   }
@@ -23,6 +25,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(buildInfo.buildTime),
     __BUILD_ID__: JSON.stringify(buildInfo.buildId),
+    __BUILD_TAG__: JSON.stringify(buildInfo.buildTag),
     __BUILD_DISPLAY_TEXT__: JSON.stringify(buildInfo.displayText),
     __BUILD_FULL_TEXT__: JSON.stringify(buildInfo.fullText)
   },

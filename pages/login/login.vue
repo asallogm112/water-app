@@ -4,7 +4,7 @@
 			<view class="hero-panel">
 				<view class="brand-header">
 					<text class="brand-title">桶装水业务管理系统</text>
-					<text class="brand-subtitle">管理员工作台</text>
+					<text class="brand-subtitle">{{ buildTag }}</text>
 				</view>
 				<view class="hero-metrics">
 					<view class="hero-metric"><text class="hero-metric-value">订单</text><text
@@ -44,6 +44,7 @@
 </template>
 
 <script>
+	/* global __BUILD_TAG__: readonly */
 	import {
 		useStore
 	} from '../../common/store.js'
@@ -60,7 +61,8 @@
 			return {
 				state,
 				loginWithPassword,
-				restoreSession
+				restoreSession,
+				buildTag: __BUILD_TAG__
 			}
 		},
 		data() {

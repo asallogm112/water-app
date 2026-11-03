@@ -13,7 +13,7 @@
 					<view>
 						<text class="welcome-greeting">
 							你好，{{ state.currentUser.userName }}
-							<text class="welcome-badge">{{ state.currentUser.isAdmin ? '系统管理员' : '配送客户' }}</text>
+							<text class="welcome-version">{{ appVersion }}</text>
 						</text>
 					</view>
 					<view class="refresh-btn" :class="{ 'refresh-btn-spinning': refreshing }" @tap="handleRefresh">
@@ -64,6 +64,7 @@
 </template>
 
 <script setup>
+	/* global __BUILD_TAG__: readonly */
 	import {
 		ref,
 		computed
@@ -86,6 +87,8 @@
 		state,
 		refreshAll
 	} = store
+
+	const appVersion = __BUILD_TAG__
 
 	onShow(() => {
 		// #ifdef MP-WEIXIN
@@ -287,11 +290,10 @@
 		font-weight: 700;
 	}
 
-	.welcome-badge {
-		font-size: 10px;
-		background: rgba(255, 255, 255, 0.2);
-		padding: 2px 8px;
-		border-radius: 999px;
+	.welcome-version {
+		font-size: 9px;
+		font-weight: 400;
+		color: rgba(255, 255, 255, 0.6);
 		margin-left: 6px;
 	}
 
