@@ -655,6 +655,8 @@
 	const isPaymentOrder = (order) => Number(order?.quantity) === 0 && Number(order?.returnedBuckets) === 0 && Number(order?.actualAmountReceived) > 0
 	const getUnitPrice = (order) => getOrderUnitPrice(order, userUnitPriceMap.value)
 	const getReceivableAmount = (order) => {
+		// 付款记录（数量0）：应收必为 0，绝不允许把实收当应收计入（红线）
+		if (isPaymentOrder(order)) return 0
 		const receivable = getOrderReceivableAmount(order, userUnitPriceMap.value)
 		if (receivable > 0) return receivable
 		return getActualPaidAmount(order)
