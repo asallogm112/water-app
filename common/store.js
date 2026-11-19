@@ -8,6 +8,8 @@ import {
 import { formatMoney } from './utils.js'
 
 const SESSION_STORAGE_KEY = 'delivery_session_admin'
+const SESSION_ORDERS_CHUNK_PREFIX = 'delivery_session_orders_'
+const SESSION_ORDERS_CHUNK_SIZE = 200
 const MERGE_STATUS_STORAGE_KEY = 'order_merge_status_cache'
 const MISC_RECORDS_STORAGE_KEY = 'misc_records_v2'
 
@@ -91,13 +93,34 @@ function applyBootstrapData(payload = {}) {
 function persistSessionState() {
 	const currentUser = clonePlainData(state.currentUser, null)
 	if (!currentUser?._id) return
-	uni.setStorageSync(SESSION_STORAGE_KEY, JSON.stringify({
-		_id: currentUser._id,
-		user: currentUser,
-		users: clonePlainData(state.users, []),
-		orders: clonePlainData(state.orders, []),
-		updatedAt: Date.now()
-	}))
+	try {
+		const orders = clonePlainData(state.orders, [])
+		const oldChunkCount = Number(readSessionState()?.orderChunkCount) || 0
+		const chunkCount = Math.ceil(orders.length / SESSION_ORDERS_CHUNK_SIZE)
+		// 订单分片写入，避免单个 key 超过微信小程序 1MB 上限
+		for (let i = 0; i < chunkCount; i++) {
+			uni.setStorageSync(
+				`${SESSION_ORDERS_CHUNK_PREFIX}${i}`,
+				JSON.stringify(orders.slice(i * SESSION_ORDERS_CHUNK_SIZE, (i + 1) * SESSION_ORDERS_CHUNK_SIZE))
+			)
+		}
+		// 订单减少后清理多余分片
+		for (let i = chunkCount; i < oldChunkCount; i++) {
+			try {
+				uni.removeStorageSync(`${SESSION_ORDERS_CHUNK_PREFIX}${i}`)
+			} catch (error) { /* 忽略清理失败 */ }
+		}
+		// 主 key 只存用户信息和分片数，不再塞入全量订单
+		uni.setStorageSync(SESSION_STORAGE_KEY, JSON.stringify({
+			_id: currentUser._id,
+			user: currentUser,
+			users: clonePlainData(state.users, []),
+			orderChunkCount: chunkCount,
+			updatedAt: Date.now()
+		}))
+	} catch (error) {
+		// 本地存储写入失败不影响主流程（刷新/同步不能因此中断）
+	}
 }
 
 function readSessionState() {
@@ -109,6 +132,21 @@ function readSessionState() {
 	} catch (error) {
 		return null
 	}
+}
+
+function readSessionOrders(chunkCount) {
+	const orders = []
+	for (let i = 0; i < chunkCount; i++) {
+		try {
+			const raw = uni.getStorageSync(`${SESSION_ORDERS_CHUNK_PREFIX}${i}`)
+			if (!raw) continue
+			const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+			if (Array.isArray(parsed)) orders.push(...parsed)
+		} catch (error) {
+			// 单片读取失败则跳过该片
+		}
+	}
+	return orders
 }
 
 const PAYMENT_RECORDS_STORAGE_KEY = 'payment_record_cache'
@@ -167,6 +205,12 @@ function clearSessionState() {
 	state.currentUser = null
 	state.users = []
 	state.orders = []
+	const chunkCount = Number(readSessionState()?.orderChunkCount) || 0
+	for (let i = 0; i < chunkCount; i++) {
+		try {
+			uni.removeStorageSync(`${SESSION_ORDERS_CHUNK_PREFIX}${i}`)
+		} catch (error) { /* 忽略清理失败 */ }
+	}
 	uni.removeStorageSync(SESSION_STORAGE_KEY)
 }
 
@@ -612,10 +656,13 @@ async function restoreSession() {
 	if (!cachedSession?.user?._id) return false
 	restoreSessionPromise = (async () => {
 		try {
+			const cachedOrders = Number.isFinite(cachedSession.orderChunkCount)
+				? readSessionOrders(cachedSession.orderChunkCount)
+				: (Array.isArray(cachedSession.orders) ? cachedSession.orders : [])
 			applyBootstrapData({
 				user: cachedSession.user || null,
 				users: Array.isArray(cachedSession.users) ? cachedSession.users : [],
-				orders: Array.isArray(cachedSession.orders) ? cachedSession.orders : []
+				orders: cachedOrders
 			})
 			return true
 		} catch (error) {

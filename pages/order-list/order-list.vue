@@ -679,6 +679,13 @@
 	const sortOrdersForDisplay = (orders = []) => orders.slice().sort((a, b) => {
 		const settlementDiff = Number(getDisplaySettlementType(b) === 'monthly') - Number(getDisplaySettlementType(a) === 'monthly')
 		if (settlementDiff !== 0) return settlementDiff
+		// 月结订单保持原排序规则（按客户名拼音），不变
+		if (getDisplaySettlementType(a) === 'monthly') {
+			return String(a.userName || '').localeCompare(String(b.userName || ''), 'zh-Hans-CN')
+		}
+		// 日结订单 item：按录入时间倒序，最新录入的排最上面
+		const createdDiff = String(b.createdAt || b.createdDate || '').localeCompare(String(a.createdAt || a.createdDate || ''))
+		if (createdDiff !== 0) return createdDiff
 		return String(a.userName || '').localeCompare(String(b.userName || ''), 'zh-Hans-CN')
 	})
 	const buildOrderDuplicateKey = (userName, date, quantity, returnedBuckets) => {
@@ -2415,7 +2422,8 @@
 
 	.detail-header-stats {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(2, auto);
+		justify-content: space-between;
 		gap: 6px 12px;
 		margin-top: 8px
 	}
@@ -2423,7 +2431,8 @@
 	.detail-header-stat {
 		font-size: 12px;
 		color: #64748b;
-		min-width: 0
+		min-width: 0;
+		white-space: nowrap
 	}
 
 	.stat-bold {

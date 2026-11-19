@@ -119,6 +119,9 @@
       </view>
     </scroll-view>
 
+    <!-- 每日账单图画布：离屏绘制，用户不可见 -->
+    <canvas type="2d" id="dailyBillCanvas" class="offscreen-canvas"></canvas>
+
     <view v-if="showExportModal" class="export-modal-mask" @tap="showExportModal = false" @touchmove.stop.prevent>
       <view class="export-modal" @tap.stop @touchmove.stop>
         <view class="export-modal-header">
@@ -132,6 +135,47 @@
         </view>
       </view>
     </view>
+
+    <!-- 账单图预览：默认全选，点图原生放大，勾选框切换选中 -->
+    <view v-if="showBillPreview" class="preview-mask" @touchmove.stop.prevent>
+      <view class="preview-panel" @tap.stop>
+        <view class="preview-header">
+          <text class="preview-title">账单图预览</text>
+          <text class="preview-close" @tap="showBillPreview = false">关闭</text>
+        </view>
+        <view class="preview-toolbar">
+          <text class="preview-count">共 {{ billPreviewFiles.length }} 张 · 已选 {{ billPreviewFiles.filter(item => item.selected).length }} 张</text>
+          <view class="preview-select-actions">
+            <text class="preview-select-btn" @tap="selectAllBillPreviews(true)">全选</text>
+            <text class="preview-select-btn" @tap="selectAllBillPreviews(false)">全不选</text>
+          </view>
+        </view>
+        <scroll-view class="preview-list" scroll-y>
+          <view
+            v-for="(item, index) in billPreviewFiles"
+            :key="item.path"
+            class="preview-item"
+            :class="{ 'preview-item-unchecked': !item.selected }"
+          >
+            <view class="preview-thumb" @tap="previewBillImage(index)">
+              <image class="preview-image" :src="item.path" mode="aspectFill" />
+              <text class="preview-zoom-hint">点图放大</text>
+            </view>
+            <view class="preview-item-footer" @tap="toggleBillPreviewItem(index)">
+              <text class="preview-item-label">{{ item.label }}</text>
+              <view class="preview-checkbox" :class="{ 'preview-checkbox-checked': item.selected }">
+                <text v-if="item.selected" class="preview-check-mark">✓</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="preview-footer">
+          <view class="preview-export-btn" :class="{ 'btn-disabled': billPreviewSaving }" @tap="saveSelectedBillImages">
+            <text>{{ billPreviewSaving ? '保存中…' : '导出所选到相册' }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -140,6 +184,7 @@ import { ref, computed } from 'vue'
 import { useStore } from '../../common/store.js'
 import { createUserUnitPriceMap, formatMoney, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
+import { generateDailyBillImageFiles, saveBillImageFiles } from '../../common/daily-bill-image.js'
 
 const store = useStore()
 const { state } = store
@@ -167,9 +212,13 @@ const persistExpandedMonths = () => {
 const selectedMonth = ref('ALL')
 const expandedMonths = ref(readExpandedMonths())
 const showExportModal = ref(false)
+const showBillPreview = ref(false)
+const billPreviewFiles = ref([])
+const billPreviewSaving = ref(false)
 const currentMonth = computed(() => store.formatDate(new Date()).substring(0, 7))
 const exportOptions = [
-  { value: 'excel', label: 'Excel' }
+  { value: 'excel', label: 'Excel' },
+  { value: 'daily-image', label: '每日账单图（保存到相册）' }
 ]
 
 const restoreSelectedMonth = () => {
@@ -329,6 +378,143 @@ const buildMonthlySummarySheetRows = () => {
   }
 }
 
+const sortBillOrders = (orders = []) => orders.slice().sort((a, b) => {
+  const aDebt = getReceivableAmount(a) - getActualAmount(a)
+  const bDebt = getReceivableAmount(b) - getActualAmount(b)
+  return bDebt - aDebt
+})
+
+const buildMonthlyBillSummary = (days) => {
+  const personMap = new Map()
+  const totals = { quantity: 0, returned: 0, receivable: 0, actual: 0 }
+  days.forEach(day => {
+    day.rows.forEach(row => {
+      if (!personMap.has(row.name)) {
+        personMap.set(row.name, { name: row.name, quantity: 0, returned: 0, receivable: 0, actual: 0 })
+      }
+      const person = personMap.get(row.name)
+      person.quantity += row.quantity
+      person.returned += row.returned
+      person.receivable += row.receivable
+      person.actual += row.actual
+      totals.quantity += row.quantity
+      totals.returned += row.returned
+      totals.receivable += row.receivable
+      totals.actual += row.actual
+    })
+  })
+  const round = (value) => Number(Number(value).toFixed(2))
+  const persons = Array.from(personMap.values())
+    .map(person => ({
+      name: person.name,
+      quantity: person.quantity,
+      returned: person.returned,
+      debt: round(person.receivable - person.actual),
+      debtBuckets: person.quantity - person.returned
+    }))
+    .sort((a, b) => b.debt - a.debt)
+  return {
+    persons,
+    totals: {
+      quantity: totals.quantity,
+      returned: totals.returned,
+      receivable: round(totals.receivable),
+      actual: round(totals.actual),
+      debt: round(totals.receivable - totals.actual)
+    }
+  }
+}
+
+const buildDailyBillDays = () => {
+  const group = monthGroups.value[selectedMonth.value]
+  if (!group || !group.days) return []
+  return Object.values(group.days)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(day => ({
+      date: day.date,
+      quantity: day.quantity,
+      returnedBuckets: day.returnedBuckets,
+      totalAmount: day.totalAmount,
+      actualAmount: day.actualAmount,
+      rows: sortBillOrders(day.orders).map(order => ({
+        name: order.userName || '',
+        quantity: Number(order.quantity) || 0,
+        returned: Number(order.returnedBuckets) || 0,
+        receivable: getReceivableAmount(order),
+        actual: getActualAmount(order)
+      }))
+    }))
+}
+
+const exportDailyImages = async () => {
+  if (selectedMonth.value === 'ALL') {
+    uni.showToast({ title: '请先选择具体月份', icon: 'none' })
+    return
+  }
+  const days = buildDailyBillDays()
+  if (days.length === 0) {
+    uni.showToast({ title: '该月份暂无账单数据', icon: 'none' })
+    return
+  }
+  const summary = buildMonthlyBillSummary(days)
+  uni.showLoading({ title: '生成账单图 0/' + (days.length + 1), mask: true })
+  try {
+    const files = await generateDailyBillImageFiles({
+      selector: '#dailyBillCanvas',
+      monthLabel: formatMonth(selectedMonth.value),
+      days,
+      summary,
+      onProgress: (done, total) => {
+        uni.showLoading({ title: `生成账单图 ${done}/${total}`, mask: true })
+      }
+    })
+    billPreviewFiles.value = files
+    showBillPreview.value = true
+  } catch (error) {
+    uni.showToast({ title: error?.message || '生成账单图失败', icon: 'none' })
+  } finally {
+    uni.hideLoading()
+  }
+}
+
+const previewBillImage = (index) => {
+  const urls = billPreviewFiles.value.map(item => item.path)
+  if (urls.length === 0) return
+  uni.previewImage({ current: index, urls })
+}
+
+const toggleBillPreviewItem = (index) => {
+  const item = billPreviewFiles.value[index]
+  if (item) item.selected = !item.selected
+}
+
+const selectAllBillPreviews = (selected) => {
+  billPreviewFiles.value.forEach(item => { item.selected = selected })
+}
+
+const saveSelectedBillImages = async () => {
+  if (billPreviewSaving.value) return
+  const selectedCount = billPreviewFiles.value.filter(item => item.selected).length
+  if (selectedCount === 0) {
+    uni.showToast({ title: '请至少选择一张图片', icon: 'none' })
+    return
+  }
+  billPreviewSaving.value = true
+  uni.showLoading({ title: `保存 0/${selectedCount}`, mask: true })
+  try {
+    const saved = await saveBillImageFiles(billPreviewFiles.value, (done, total) => {
+      uni.showLoading({ title: `保存 ${done}/${total}`, mask: true })
+    })
+    showBillPreview.value = false
+    uni.showToast({ title: `已保存 ${saved} 张到相册`, icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.message || '保存到相册失败', icon: 'none' })
+  } finally {
+    uni.hideLoading()
+    billPreviewSaving.value = false
+  }
+}
+
 const handleExportOption = (type) => {
   showExportModal.value = false
   if (type === 'excel') {
@@ -338,6 +524,10 @@ const handleExportOption = (type) => {
         { name: '汇总', ...buildMonthlySummarySheetRows() }
       ]
     }).then(showExcelPreviewShareActions).catch(() => {})
+    return
+  }
+  if (type === 'daily-image') {
+    exportDailyImages()
     return
   }
 }
@@ -425,6 +615,8 @@ const navigateToOrderList = (date) => {
 .monthly-content { flex: 1; }
 .monthly-inner { padding: 16px; }
 
+.offscreen-canvas { position: fixed; left: -9999px; top: -9999px; width: 750px; height: 2000px; }
+
 .card { background: #fff; border-radius: 18px; border: 1px solid #e8eef5; box-shadow: 0 8px 22px rgba(15,23,42,0.04); }
 
 .filter-card { padding: 14px; margin-bottom: 16px; }
@@ -496,6 +688,31 @@ const navigateToOrderList = (date) => {
 .export-modal-close { font-size: 11px; font-weight: 800; color: #059669; background: #ecfdf5; padding: 7px 12px; border-radius: 999px; }
 .export-option-list { display: flex; flex-direction: column; gap: 8px; }
 .export-option-item { padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 13px; font-weight: 700; color: #334155; }
+
+.preview-mask { position: fixed; inset: 0; background: rgba(15,23,42,.62); z-index: 130; }
+.preview-panel { width: 100%; height: 100vh; background: #f8fafc; display: flex; flex-direction: column; box-sizing: border-box; }
+.preview-header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+.preview-title { font-size: 16px; font-weight: 800; color: #1e293b; }
+.preview-close { font-size: 12px; font-weight: 800; color: #059669; background: #ecfdf5; padding: 7px 14px; border-radius: 999px; }
+.preview-toolbar { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+.preview-count { font-size: 12px; font-weight: 700; color: #475569; }
+.preview-select-actions { display: flex; gap: 8px; }
+.preview-select-btn { font-size: 12px; font-weight: 700; color: #0f766e; padding: 6px 12px; border: 1px solid #99f6e4; border-radius: 999px; background: #f0fdfa; }
+.preview-list { flex-shrink: 0; height: calc(100vh - 250px); padding: 14px 16px; box-sizing: border-box; }
+.preview-item { display: inline-block; width: calc(50% - 7px); margin: 0 14px 14px 0; vertical-align: top; background: #fff; border: 2px solid #10b981; border-radius: 16px; overflow: hidden; box-shadow: 0 6px 18px rgba(15,23,42,.06); box-sizing: border-box; }
+.preview-item:nth-child(2n) { margin-right: 0; }
+.preview-item-unchecked { border-color: #cbd5e1; opacity: .5; }
+.preview-thumb { position: relative; width: 100%; height: 200px; background: #e2e8f0; overflow: hidden; }
+.preview-image { width: 100%; height: 100%; display: block; }
+.preview-zoom-hint { position: absolute; right: 8px; bottom: 8px; font-size: 10px; font-weight: 700; color: #fff; background: rgba(15,23,42,.55); padding: 3px 8px; border-radius: 999px; }
+.preview-item-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-top: 1px solid #f1f5f9; }
+.preview-item-label { font-size: 12px; font-weight: 700; color: #334155; }
+.preview-checkbox { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; background: #fff; }
+.preview-checkbox-checked { border-color: #10b981; background: #10b981; }
+.preview-check-mark { color: #fff; font-size: 14px; font-weight: 800; }
+.preview-footer { flex-shrink: 0; padding: 12px 16px 20px; background: #fff; border-top: 1px solid #e2e8f0; box-sizing: border-box; }
+.preview-export-btn { height: 46px; border-radius: 16px; background: linear-gradient(135deg,#0f766e,#10b981); box-shadow: 0 10px 20px rgba(16,185,129,.16); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #fff; }
+.btn-disabled { opacity: .5; }
 
 .safe-bottom { height: 32px; }
 </style>
