@@ -51,7 +51,7 @@
           <view class="summary-header">
             <text class="summary-title">📋 当前周期客户账单</text>
             <view class="action-group">
-              <view class="customer-copy-btn" @tap="handleExportOption"><text class="customer-copy-btn-text">导出</text></view>
+              <view class="customer-copy-btn" @tap="openExportModal"><text class="customer-copy-btn-text">导出</text></view>
             </view>
           </view>
           <view class="leaderboard-list">
@@ -246,6 +246,32 @@
         </view>
       </view>
     </view>
+
+    <view v-if="showExportModal" class="editor-mask" @tap="showExportModal = false" @touchmove.stop.prevent>
+      <view class="editor-modal export-modal" @tap.stop @touchmove.stop>
+        <view class="editor-header">
+          <text class="editor-title">选择导出方式</text>
+          <text class="editor-close" @tap="showExportModal = false">关闭</text>
+        </view>
+        <view class="export-option-list">
+          <view class="export-option-item" @tap="handleExportOption('excel')">
+            <text class="export-option-title">Excel</text>
+          </view>
+          <view class="export-option-item" @tap="handleExportOption('image')">
+            <text class="export-option-title">图片</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <canvas type="2d" id="exportBillCanvas" class="offscreen-canvas"></canvas>
+    <bill-image-preview
+      :visible="showImagePreview"
+      title="账单表图片预览"
+      :files="imagePreviewFiles"
+      @close="showImagePreview = false"
+      @saved="onImageSaved"
+    />
   </view>
 </template>
 
@@ -254,6 +280,8 @@ import { ref, computed, watch } from 'vue'
 import { useStore } from '../../common/store.js'
 import { createUserUnitPriceMap, formatMoney, getOrderReceivableAmount, getOrderActualReceivedAmount, getOrderUnitPrice } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
+import { generateTableImageFiles } from '../../common/daily-bill-image.js'
+import BillImagePreview from '../../components/bill-image-preview/bill-image-preview.vue'
 
 const store = useStore()
 const { state, updateOrder, deleteOrder, deletePaymentRecord } = store
@@ -545,9 +573,38 @@ const buildBillSheetRows = () => {
   }
 }
 
-const handleExportOption = () => {
+const showExportModal = ref(false)
+const showImagePreview = ref(false)
+const imagePreviewFiles = ref([])
+const openExportModal = () => {
   if (scaleFilteredOrders.value.length === 0) {
     uni.showToast({ title: '暂无数据', icon: 'none' })
+    return
+  }
+  showExportModal.value = true
+}
+const handleExportOption = (type) => {
+  showExportModal.value = false
+  if (scaleFilteredOrders.value.length === 0) {
+    uni.showToast({ title: '暂无数据', icon: 'none' })
+    return
+  }
+  if (type === 'image') {
+    const { rows } = buildBillSheetRows()
+    const title = rows[0]?.[0]?.value || `${statsSheetName()} 账单表`
+    uni.showLoading({ title: '生成图片中…', mask: true })
+    generateTableImageFiles({
+      selector: '#exportBillCanvas',
+      title,
+      rows
+    }).then(files => {
+      imagePreviewFiles.value = files
+      showImagePreview.value = true
+    }).catch(error => {
+      uni.showToast({ title: error?.message || '图片生成失败', icon: 'none' })
+    }).finally(() => {
+      uni.hideLoading()
+    })
     return
   }
   exportExcelWorkbook({
@@ -556,6 +613,10 @@ const handleExportOption = () => {
       { name: '账单表', ...buildBillSheetRows() }
     ]
   }).then(showExcelPreviewShareActions).catch(() => {})
+}
+const onImageSaved = (saved) => {
+  showImagePreview.value = false
+  uni.showToast({ title: `已保存 ${saved} 张到相册`, icon: 'success' })
 }
 
 // 备注读写（与「按人对账」共用同一份存储）
@@ -776,6 +837,10 @@ const confirmOrderDelete = () => {
 </script>
 
 <style lang="scss" scoped>
+.offscreen-canvas{position:fixed;left:-9999px;top:-9999px;width:750px;height:2000px}
+.export-option-list{display:flex;flex-direction:column;gap:10px}
+.export-option-item{padding:14px 16px;border-radius:16px;background:#f8fafc;border:1px solid #dbe4ee}
+.export-option-title{font-size:13px;font-weight:700;color:#1e293b}
 .stats-page{min-height:100vh;background:linear-gradient(180deg,#f8fbfa 0%,#f2f6f9 100%);display:flex;flex-direction:column}
 .stats-content{flex:1}.stats-inner{padding:16px}
 .card{background:#fff;border-radius:18px;border:1px solid #e8eef5;box-shadow:0 8px 22px rgba(15,23,42,.04)}

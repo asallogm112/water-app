@@ -384,6 +384,10 @@
 			<image :src="previewUrl" mode="widthFix" class="lightbox-img" />
 			<text class="lightbox-close">关闭预览</text>
 		</view>
+
+		<!-- 导出图片：离屏画布 + 预览勾选 -->
+		<canvas type="2d" id="exportBillCanvas" class="offscreen-canvas"></canvas>
+		<bill-image-preview :visible="showImagePreview" title="账单图预览" :files="imagePreviewFiles" @close="showImagePreview = false" @saved="onImageSaved" />
 	</view>
 </template>
 
@@ -414,6 +418,8 @@
 		exportExcelWorkbook,
 		showExcelPreviewShareActions
 	} from '../../common/export-excel.js'
+	import { generateTableImageFiles } from '../../common/daily-bill-image.js'
+	import BillImagePreview from '../../components/bill-image-preview/bill-image-preview.vue'
 
 	const store = useStore()
 	const {
@@ -647,8 +653,11 @@
 		}
 	]
 	const exportOptions = [
-		{ value: 'excel', label: 'Excel' }
+		{ value: 'excel', label: 'Excel' },
+		{ value: 'image', label: '图片' }
 	]
+	const showImagePreview = ref(false)
+	const imagePreviewFiles = ref([])
 	const isPaid = (order) => getOrderActualReceivedAmount(order) > 0
 	const getActualPaidAmount = (order) => getOrderActualReceivedAmount(order)
 	// 付款记录：纯付款（数量0、回桶0、实收>0），如 0 0 220；用于把这类行在列表里标红
@@ -913,6 +922,49 @@
 			]
 		}
 	}
+	const buildDayImageRows = () => {
+		const rows = [
+			[{ value: `${selectedDate.value} 日账单`, style: 'title' }],
+			[
+				{ value: '客户', style: 'header' },
+				{ value: '发水', style: 'header' },
+				{ value: '回桶', style: 'header' },
+				{ value: '应收', style: 'header' },
+				{ value: '欠款', style: 'header' }
+			]
+		]
+		const items = filteredOrders.value
+			.filter(order => String(order?.userName || '').trim())
+			.map(order => {
+				const receivable = getReceivableAmount(order)
+				return {
+					name: String(order.userName || '').trim(),
+					quantity: Number(order.quantity) || 0,
+					returnedBuckets: Number(order.returnedBuckets) || 0,
+					receivable,
+					debt: receivable - getActualPaidAmount(order)
+				}
+			})
+			.sort((a, b) => b.debt - a.debt)
+		items.forEach(item => {
+			rows.push([
+				item.name,
+				item.quantity,
+				item.returnedBuckets,
+				formatMoney(item.receivable),
+				{ value: formatMoney(item.debt), style: 'red' }
+			])
+		})
+		rows.push(['', '', '', '', ''])
+		rows.push([
+			{ value: '合计', style: 'header' },
+			totalDeliveredSum.value,
+			totalReturnedSum.value,
+			{ value: formatMoney(totalAmountSum.value), style: 'red' },
+			{ value: formatMoney(totalAmountSum.value - totalActualSum.value), style: 'red' }
+		])
+		return { rows, itemCount: items.length }
+	}
 	const handleExportOption = (type) => {
 		showExportModal.value = false
 		if (type === 'excel') {
@@ -924,6 +976,31 @@
 			}).then(showExcelPreviewShareActions).catch(() => {})
 			return
 		}
+		if (type === 'image') {
+			const { rows, itemCount } = buildDayImageRows()
+			if (itemCount === 0) {
+				uni.showToast({ title: '暂无可导出的账单数据', icon: 'none' })
+				return
+			}
+			uni.showLoading({ title: '生成图片中…', mask: true })
+			generateTableImageFiles({
+				selector: '#exportBillCanvas',
+				title: `${selectedDate.value} 日账单`,
+				rows
+			}).then(files => {
+				imagePreviewFiles.value = files
+				showImagePreview.value = true
+			}).catch(error => {
+				uni.showToast({ title: error?.message || '图片生成失败', icon: 'none' })
+			}).finally(() => {
+				uni.hideLoading()
+			})
+			return
+		}
+	}
+	const onImageSaved = (saved) => {
+		showImagePreview.value = false
+		uni.showToast({ title: `已保存 ${saved} 张到相册`, icon: 'success' })
 	}
 
 	const resetFilters = () => {
@@ -1423,6 +1500,7 @@
 </script>
 
 <style lang="scss" scoped>
+	.offscreen-canvas { position: fixed; left: -9999px; top: -9999px; width: 750px; height: 2000px; }
 	.order-list-page {
 		min-height: 100vh;
 		background: linear-gradient(180deg, #f8fbfa 0%, #f2f6f9 100%);

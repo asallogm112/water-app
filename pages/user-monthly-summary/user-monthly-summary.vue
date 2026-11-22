@@ -429,9 +429,21 @@
           <view class="export-option-item" @tap="handleExportOption('excel')">
             <text class="export-option-title">Excel</text>
           </view>
+          <view class="export-option-item" @tap="handleExportOption('image')">
+            <text class="export-option-title">图片</text>
+          </view>
         </view>
       </view>
     </view>
+
+    <canvas type="2d" id="exportBillCanvas" class="offscreen-canvas"></canvas>
+    <bill-image-preview
+      :visible="showImagePreview"
+      title="对账单图片预览"
+      :files="imagePreviewFiles"
+      @close="showImagePreview = false"
+      @saved="onImageSaved"
+    />
   </view>
 </template>
 
@@ -441,6 +453,8 @@ import { onLoad } from '@dcloudio/uni-app'
 import { useStore } from '../../common/store.js'
 import { createUserUnitPriceMap, formatMoney, getOrderUnitPrice, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
+import { generateTableImageFiles } from '../../common/daily-bill-image.js'
+import BillImagePreview from '../../components/bill-image-preview/bill-image-preview.vue'
 
 const store = useStore()
 const { state, addOrder, addOrders, updateOrder, deleteOrder, deletePaymentRecord, createPaymentRecord, formatBeijingDateTime, formatDate } = store
@@ -509,6 +523,8 @@ const customerSearchKeyword = ref('')
 const customerScrollIntoView = ref('')
 const monthScrollIntoView = ref('')
 const showExportModal = ref(false)
+const showImagePreview = ref(false)
+const imagePreviewFiles = ref([])
 const showEditModal = ref(false)
 const showBatchAddModal = ref(false)
 const showCustomerRemarkModal = ref(false)
@@ -1257,6 +1273,30 @@ const handleExportOption = (type) => {
     }).then(showExcelPreviewShareActions).catch(() => {})
     return
   }
+  if (type === 'image') {
+    const { rows } = buildCustomerSummarySheetRows()
+    const title = selectedMonth.value === 'ALL'
+      ? `${activeCustomerDisplayName.value} 对账汇总`
+      : `${activeCustomerDisplayName.value} ${selectedMonth.value} 对账汇总`
+    uni.showLoading({ title: '生成图片中…', mask: true })
+    generateTableImageFiles({
+      selector: '#exportBillCanvas',
+      title,
+      rows
+    }).then(files => {
+      imagePreviewFiles.value = files
+      showImagePreview.value = true
+    }).catch(error => {
+      uni.showToast({ title: error?.message || '图片生成失败', icon: 'none' })
+    }).finally(() => {
+      uni.hideLoading()
+    })
+    return
+  }
+}
+const onImageSaved = (saved) => {
+  showImagePreview.value = false
+  uni.showToast({ title: `已保存 ${saved} 张到相册`, icon: 'success' })
 }
 
 const openEditModal = (order) => {
@@ -1652,6 +1692,7 @@ const formatMonth = (m) => { if (!m) return ''; const [y, mm] = m.split('-'); re
 </script>
 
 <style lang="scss" scoped>
+.offscreen-canvas { position: fixed; left: -9999px; top: -9999px; width: 750px; height: 2000px; }
 .user-monthly-page { min-height: 100vh; background: linear-gradient(180deg, #f8fbfa 0%, #f2f6f9 100%); display: flex; flex-direction: column; }
 .user-monthly-content { flex: 1; }
 .user-monthly-inner { padding: 16px; }

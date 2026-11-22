@@ -301,3 +301,75 @@ export async function saveBillImageFiles(files = [], onProgress) {
   }
   return done
 }
+
+const TABLE_LINE_HEIGHT = 38
+const TABLE_TOP = 90
+
+function cellText(cell) {
+  if (cell && typeof cell === 'object' && !Array.isArray(cell)) return String(cell.value ?? '')
+  return String(cell ?? '')
+}
+
+function cellStyle(cell) {
+  return cell && typeof cell === 'object' && !Array.isArray(cell) ? (cell.style || '') : ''
+}
+
+function drawTableSheet(ctx, rows, title, maxColumns) {
+  const height = TABLE_TOP + rows.length * TABLE_LINE_HEIGHT + 40
+  ctx.clearRect(0, 0, PAGE_WIDTH, height)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, PAGE_WIDTH, height)
+  ctx.textBaseline = 'middle'
+
+  ctx.fillStyle = '#1e293b'
+  ctx.font = 'bold 30px sans-serif'
+  ctx.textAlign = 'left'
+  ctx.fillText(title, PADDING, 45)
+
+  const colWidth = (PAGE_WIDTH - PADDING * 2) / Math.max(maxColumns, 1)
+  rows.forEach((row, rowIndex) => {
+    const y = TABLE_TOP + rowIndex * TABLE_LINE_HEIGHT + TABLE_LINE_HEIGHT / 2
+    const cells = Array.isArray(row) ? row : [row]
+    cells.forEach((cell, colIndex) => {
+      const text = cellText(cell)
+      if (!text) return
+      const style = cellStyle(cell)
+      ctx.font = (style === 'title' ? 'bold 28px' : (style === 'header' ? 'bold 24px' : '22px')) + ' sans-serif'
+      ctx.fillStyle = style === 'title' || style === 'monthly' || style === 'red'
+        ? '#dc2626'
+        : (style === 'green' ? '#059669' : (style === 'orange' ? '#ea580c' : (style === 'purple' ? '#7c3aed' : '#1e293b')))
+      ctx.textAlign = colIndex === 0 ? 'left' : 'right'
+      const x = colIndex === 0 ? PADDING + 4 : PADDING + colIndex * colWidth + colWidth - 8
+      ctx.fillText(text, x, y)
+    })
+  })
+  return height
+}
+
+/**
+ * 通用表格 rows → 图片（供日账单/按人对账/数据报表导出）
+ * @param {Object} options
+ * @param {String} options.selector canvas 节点选择器
+ * @param {String} options.title 图片标题
+ * @param {Array} options.rows 二维数组，单元格可为 {value, style}
+ * @param {Function} [options.onProgress] 进度回调 (当前, 总数)
+ * @returns {Array} [{ path, label, selected }]
+ */
+export async function generateTableImageFiles({ selector, title, rows = [], onProgress }) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('没有可导出的表格数据')
+  }
+  const canvas = await getCanvasNode(selector)
+  const ctx = canvas.getContext('2d')
+  const dpr = (uni.getSystemInfoSync().pixelRatio || 1)
+  const maxColumns = rows.reduce((max, row) => Math.max(max, Array.isArray(row) ? row.length : 1), 1)
+  const height = TABLE_TOP + rows.length * TABLE_LINE_HEIGHT + 40
+  canvas.width = PAGE_WIDTH * dpr
+  canvas.height = height * dpr
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.scale(dpr, dpr)
+  drawTableSheet(ctx, rows, title, maxColumns)
+  const path = await canvasToTempFile(canvas, height, dpr)
+  if (typeof onProgress === 'function') onProgress(1, 1)
+  return [{ path, label: title, selected: true }]
+}
