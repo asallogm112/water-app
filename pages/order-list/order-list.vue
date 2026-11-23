@@ -412,7 +412,8 @@
 		normalizeRecognizedOrderText,
 		parseCompactOrderSegments,
 		getOrderReceivableAmount,
-		getOrderActualReceivedAmount
+		getOrderActualReceivedAmount,
+		formatExportMoney
 	} from '../../common/utils.js'
 	import {
 		exportExcelWorkbook,
@@ -835,8 +836,8 @@
 		const rows = [
 			[{ value: `${selectedDate.value} 日账单汇总`, style: 'title' }],
 			['总发水', totalDeliveredSum.value],
-			['应收总金额', totalAmountSum.value],
-			['实收总金额', totalActualSum.value],
+			['应收总金额', Number(formatExportMoney(totalAmountSum.value))],
+			['实收总金额', Number(formatExportMoney(totalActualSum.value))],
 			['', '', '', '', '']
 		]
 		const groupedMap = new Map()
@@ -863,6 +864,7 @@
 		})
 		rows.push(headerRow)
 		const groupedItems = Array.from(groupedMap.values())
+			.filter(item => item.receivable - item.actual > 5)
 		const dailyItems = groupedItems.filter(item => item.settlementLabel === '日结')
 		const monthlyItems = groupedItems.filter(item => item.settlementLabel === '月结')
 		const buildCustomerRow = (item, isMonthly) => {
@@ -870,8 +872,8 @@
 				isMonthly ? { value: item.userName, style: 'monthly' } : item.userName,
 				item.quantity,
 				item.returnedBuckets,
-				item.receivable,
-				item.actual
+				Number(formatExportMoney(item.receivable)),
+				Number(formatExportMoney(item.actual))
 			]
 		}
 		dailyItems.forEach(item => {
@@ -924,7 +926,6 @@
 	}
 	const buildDayImageRows = () => {
 		const rows = [
-			[{ value: `${selectedDate.value} 日账单`, style: 'title' }],
 			[
 				{ value: '客户', style: 'header' },
 				{ value: '发水', style: 'header' },
@@ -945,14 +946,15 @@
 					debt: receivable - getActualPaidAmount(order)
 				}
 			})
+			.filter(item => item.debt > 5)
 			.sort((a, b) => b.debt - a.debt)
 		items.forEach(item => {
 			rows.push([
 				item.name,
 				item.quantity,
 				item.returnedBuckets,
-				formatMoney(item.receivable),
-				{ value: formatMoney(item.debt), style: 'red' }
+				formatExportMoney(item.receivable),
+				{ value: formatExportMoney(item.debt), style: 'red' }
 			])
 		})
 		rows.push(['', '', '', '', ''])
@@ -960,8 +962,8 @@
 			{ value: '合计', style: 'header' },
 			totalDeliveredSum.value,
 			totalReturnedSum.value,
-			{ value: formatMoney(totalAmountSum.value), style: 'red' },
-			{ value: formatMoney(totalAmountSum.value - totalActualSum.value), style: 'red' }
+			{ value: formatExportMoney(totalAmountSum.value), style: 'red' },
+			{ value: formatExportMoney(totalAmountSum.value - totalActualSum.value), style: 'red' }
 		])
 		return { rows, itemCount: items.length }
 	}

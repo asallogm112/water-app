@@ -14,7 +14,7 @@ const SUMMARY_TOTAL_LINE_HEIGHT = 42
 
 function formatMoney(value) {
   const num = Number(value)
-  return (Number.isFinite(num) ? num : 0).toFixed(2)
+  return String(Math.trunc(Number.isFinite(num) ? num : 0))
 }
 
 function getCanvasNode(selector) {

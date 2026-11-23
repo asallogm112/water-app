@@ -451,7 +451,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { useStore } from '../../common/store.js'
-import { createUserUnitPriceMap, formatMoney, getOrderUnitPrice, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
+import { createUserUnitPriceMap, formatMoney, formatExportMoney, getOrderUnitPrice, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 import { generateTableImageFiles } from '../../common/daily-bill-image.js'
 import BillImagePreview from '../../components/bill-image-preview/bill-image-preview.vue'
@@ -1170,11 +1170,11 @@ const buildCustomerSummarySheetRows = () => {
   const customerUnitPrice = Number(selectedCustomerObj.value?.unitPrice)
   const rows = [
     [{ value: title, style: 'title' }],
-    ['单价', Number.isFinite(customerUnitPrice) && customerUnitPrice >= 0 ? customerUnitPrice : 0],
+    ['单价', Number(formatExportMoney(Number.isFinite(customerUnitPrice) && customerUnitPrice >= 0 ? customerUnitPrice : 0))],
     ['累计送水', customerStats.value.totalWater],
     ['累计回桶', customerStats.value.totalReturned],
-    ['应收金额', customerStats.value.totalReceivable],
-    ['实收金额', customerStats.value.totalPaid],
+    ['应收金额', Number(formatExportMoney(customerStats.value.totalReceivable))],
+    ['实收金额', Number(formatExportMoney(customerStats.value.totalPaid))],
     ['', '', '', '', ''],
     [
       { value: '日期', style: 'header' },
@@ -1188,12 +1188,13 @@ const buildCustomerSummarySheetRows = () => {
     const relatedOrders = filteredOrders.value.filter(order => order.createdDate === item.date)
     const receivable = relatedOrders.reduce((sum, order) => sum + getReceivableAmount(order), 0)
     const actual = relatedOrders.reduce((sum, order) => sum + getActualAmount(order), 0)
+    if (receivable - actual <= 5) return
     rows.push([
       item.date,
       item.water,
       item.returned,
-      Number(receivable.toFixed(2)),
-      Number(actual.toFixed(2))
+      Number(formatExportMoney(receivable)),
+      Number(formatExportMoney(actual))
     ])
   })
   return {
@@ -1282,7 +1283,7 @@ const handleExportOption = (type) => {
     generateTableImageFiles({
       selector: '#exportBillCanvas',
       title,
-      rows
+      rows: rows.slice(1)
     }).then(files => {
       imagePreviewFiles.value = files
       showImagePreview.value = true

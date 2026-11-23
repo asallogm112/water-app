@@ -278,7 +278,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useStore } from '../../common/store.js'
-import { createUserUnitPriceMap, formatMoney, getOrderReceivableAmount, getOrderActualReceivedAmount, getOrderUnitPrice } from '../../common/utils.js'
+import { createUserUnitPriceMap, formatMoney, formatExportMoney, getOrderReceivableAmount, getOrderActualReceivedAmount, getOrderUnitPrice } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 import { generateTableImageFiles } from '../../common/daily-bill-image.js'
 import BillImagePreview from '../../components/bill-image-preview/bill-image-preview.vue'
@@ -515,8 +515,8 @@ const buildBillSheetRows = () => {
 
   // 汇总区（金额用红色）
   const sumRows = [
-    { label: '销售总额', value: formatMoney(totalSales.value) },
-    { label: '实收金额', value: formatMoney(actualReceivedAmount.value) },
+    { label: '销售总额', value: formatExportMoney(totalSales.value) },
+    { label: '实收金额', value: formatExportMoney(actualReceivedAmount.value) },
     { label: '发货数量', value: `${totalDelivered.value} 桶` },
     { label: '回桶数量', value: `${totalReturned.value} 个` },
     { label: '滞留在外桶', value: `${unreturnedBuckets.value} 个` }
@@ -547,15 +547,18 @@ const buildBillSheetRows = () => {
   // 空行分隔汇总与客户明细
   rows.push(['', '', '', '', '', ''])
   rows.push(customerHeader)
-  leaderboardData.value.forEach(item => {
+  leaderboardData.value
+    .filter(item => Number(item.unpaid) > 5)
+    .sort((a, b) => Number(b.unpaid) - Number(a.unpaid))
+    .forEach(item => {
     const unitPrice = item.qty > 0 ? (item.payable / item.qty) : 0
     rows.push([
       item.userName,
       item.qty,
-      { value: formatMoney(unitPrice), style: 'red' },
-      { value: formatMoney(item.payable), style: 'red' },
-      { value: formatMoney(item.paid), style: 'green' },
-      { value: formatMoney(item.unpaid), style: 'purple' }
+      { value: formatExportMoney(unitPrice), style: 'red' },
+      { value: formatExportMoney(item.payable), style: 'red' },
+      { value: formatExportMoney(item.paid), style: 'green' },
+      { value: formatExportMoney(item.unpaid), style: 'purple' }
     ])
   })
 
@@ -596,7 +599,7 @@ const handleExportOption = (type) => {
     generateTableImageFiles({
       selector: '#exportBillCanvas',
       title,
-      rows
+      rows: rows.slice(1)
     }).then(files => {
       imagePreviewFiles.value = files
       showImagePreview.value = true

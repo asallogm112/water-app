@@ -165,7 +165,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { formatMoney } from '../../common/utils.js'
+import { formatMoney, formatExportMoney } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 import { useStore } from '../../common/store.js'
 
@@ -416,9 +416,9 @@ const handleExport = () => {
     rows.push([
       formatRecordTime(record),
       { value: record.userName || '', style: 'black' },
-      { value: `${change >= 0 ? '+' : '-'}${formatMoney(Math.abs(change))}`, style: change >= 0 ? 'green' : 'red' },
-      { value: formatMoney(record.beforeAmount), style: 'black' },
-      { value: formatMoney(record.afterAmount), style: 'black' },
+      { value: `${change >= 0 ? '+' : '-'}${formatExportMoney(Math.abs(change))}`, style: change >= 0 ? 'green' : 'red' },
+      { value: formatExportMoney(record.beforeAmount), style: 'black' },
+      { value: formatExportMoney(record.afterAmount), style: 'black' },
       { value: record.orderDate || '', style: 'black' },
       { value: record.remark || '', style: 'black' }
     ])

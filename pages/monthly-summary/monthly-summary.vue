@@ -182,7 +182,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useStore } from '../../common/store.js'
-import { createUserUnitPriceMap, formatMoney, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
+import { createUserUnitPriceMap, formatMoney, formatExportMoney, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 import { generateDailyBillImageFiles, saveBillImageFiles } from '../../common/daily-bill-image.js'
 
@@ -336,14 +336,16 @@ const buildMonthlySummarySheetRows = () => {
     ['总发水', stats.value.totalQuantity],
     ['总回桶', stats.value.totalReturnedBuckets],
     ['总欠桶', stats.value.totalQuantity - stats.value.totalReturnedBuckets],
-    ['总应收', stats.value.totalReceivable],
-    ['总实收', stats.value.totalActualReceived],
+    ['总应收', Number(formatExportMoney(stats.value.totalReceivable))],
+    ['总实收', Number(formatExportMoney(stats.value.totalActualReceived))],
     ['', '', '', '', ''],
     headerRow
   ]
-  sortedMonthGroups.value.forEach(group => {
-    rows.push([formatMonth(group.month), group.quantity, group.returnedBuckets, group.totalAmount, group.actualAmount])
-  })
+  sortedMonthGroups.value
+    .filter(group => group.totalAmount - group.actualAmount > 5)
+    .forEach(group => {
+      rows.push([formatMonth(group.month), group.quantity, group.returnedBuckets, Number(formatExportMoney(group.totalAmount)), Number(formatExportMoney(group.actualAmount))])
+    })
   const getCellDisplayLength = (cell) => {
     const value = cell && typeof cell === 'object' && !Array.isArray(cell) ? cell.value : cell
     const text = String(value ?? '')
@@ -412,6 +414,7 @@ const buildMonthlyBillSummary = (days) => {
       debt: round(person.receivable - person.actual),
       debtBuckets: person.quantity - person.returned
     }))
+    .filter(person => person.debt > 5)
     .sort((a, b) => b.debt - a.debt)
   return {
     persons,
@@ -442,7 +445,7 @@ const buildDailyBillDays = () => {
         returned: Number(order.returnedBuckets) || 0,
         receivable: getReceivableAmount(order),
         actual: getActualAmount(order)
-      }))
+      })).filter(row => row.receivable - row.actual > 5)
     }))
 }
 

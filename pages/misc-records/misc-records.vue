@@ -196,7 +196,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { formatMoney } from '../../common/utils.js'
+import { formatMoney, formatExportMoney } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
 import { useStore } from '../../common/store.js'
 
@@ -708,7 +708,7 @@ const buildCombinedSheetRows = () => {
     rows.push([{ value: `${monthShort.value} 工资`, style: 'header' }, '', ''])
     merges.push({ start: `A${rowIndex}`, end: `C${rowIndex}` })
     rowIndex += 1
-    rows.push([{ value: `工资合计: ${Math.round(sTotal * 100) / 100} 元`, style: 'monthly' }, '', ''])
+    rows.push([{ value: `工资合计: ${formatExportMoney(sTotal)} 元`, style: 'monthly' }, '', ''])
     merges.push({ start: `A${rowIndex}`, end: `C${rowIndex}` })
     rowIndex += 1
     rows.push([
@@ -722,7 +722,7 @@ const buildCombinedSheetRows = () => {
       rows.push([
         { value: rec.name || '', style: 'black' },
         { value: '工资', style: 'black' },
-        { value: Number((Number(rec.amount) || 0).toFixed(2)), style: 'black' }
+        { value: Number(formatExportMoney(rec.amount)), style: 'black' }
       ])
     })
     rowIndex += salary.length
@@ -737,7 +737,7 @@ const buildCombinedSheetRows = () => {
     rows.push([{ value: `${monthShort.value} 报销`, style: 'header' }, '', ''])
     merges.push({ start: `A${rowIndex}`, end: `C${rowIndex}` })
     rowIndex += 1
-    rows.push([{ value: `报销总计: ${Math.round(rTotal * 100) / 100} 元`, style: 'monthly' }, '', ''])
+    rows.push([{ value: `报销总计: ${formatExportMoney(rTotal)} 元`, style: 'monthly' }, '', ''])
     merges.push({ start: `A${rowIndex}`, end: `C${rowIndex}` })
     rowIndex += 1
     // 表头
@@ -754,7 +754,7 @@ const buildCombinedSheetRows = () => {
       rows.push([
         { value: rec.name || '', style: 'black' },
         { value: itemText || '—', style: 'black' },
-        { value: Number((Number(rec.amount) || 0).toFixed(2)), style: 'black' }
+        { value: Number(formatExportMoney(rec.amount)), style: 'black' }
       ])
     })
     rowIndex += reimburse.length

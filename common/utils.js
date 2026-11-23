@@ -39,6 +39,15 @@ export function formatMoney(value) {
   return Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
 }
 
+/**
+ * 导出专用：金额取整（去掉小数，22.7 → 22）；页面显示仍用 formatMoney
+ */
+export function formatExportMoney(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return '0'
+  return String(Math.trunc(amount))
+}
+
 export function createUserUnitPriceMap(users = []) {
   const map = new Map()
   users.filter(user => user && !user.isAdmin).forEach(user => {
