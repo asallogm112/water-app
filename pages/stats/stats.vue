@@ -526,13 +526,12 @@ const buildBillSheetRows = () => {
   const customerHeader = [
     { value: '客户', style: 'header' },
     { value: '数量', style: 'header' },
-    { value: '单价', style: 'header' },
     { value: '应付', style: 'header' },
     { value: '已付', style: 'header' },
     { value: '待付', style: 'header' }
   ]
 
-  // 标题合并跨 6 列（A1:F1）
+  // 标题合并跨 5 列（A1:E1）
   const rows = [
     [{ value: `${periodLabel} 账单表`, style: 'title' }]
   ]
@@ -545,24 +544,22 @@ const buildBillSheetRows = () => {
     ])
   })
   // 空行分隔汇总与客户明细
-  rows.push(['', '', '', '', '', ''])
+  rows.push(['', '', '', '', ''])
   rows.push(customerHeader)
   leaderboardData.value
     .filter(item => Number(item.unpaid) > 5)
     .sort((a, b) => Number(b.unpaid) - Number(a.unpaid))
     .forEach(item => {
-    const unitPrice = item.qty > 0 ? (item.payable / item.qty) : 0
     rows.push([
       item.userName,
       item.qty,
-      { value: formatExportMoney(unitPrice), style: 'red' },
       { value: formatExportMoney(item.payable), style: 'red' },
       { value: formatExportMoney(item.paid), style: 'green' },
       { value: formatExportMoney(item.unpaid), style: 'purple' }
     ])
   })
 
-  const columnWidths = calcAutoWidths(rows, 6)
+  const columnWidths = calcAutoWidths(rows, 5)
   return {
     rows,
     defaultRowHeight: 27,
@@ -571,7 +568,7 @@ const buildBillSheetRows = () => {
       1: 32
     },
     merges: [
-      { start: 'A1', end: 'F1' }
+      { start: 'A1', end: 'E1' }
     ]
   }
 }

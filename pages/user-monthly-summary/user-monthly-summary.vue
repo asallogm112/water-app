@@ -1167,10 +1167,8 @@ const buildCustomerSummarySheetRows = () => {
   const title = selectedMonth.value === 'ALL'
     ? `${activeCustomerDisplayName.value} 对账汇总`
     : `${activeCustomerDisplayName.value} ${selectedMonth.value} 对账汇总`
-  const customerUnitPrice = Number(selectedCustomerObj.value?.unitPrice)
   const rows = [
     [{ value: title, style: 'title' }],
-    ['单价', Number(formatExportMoney(Number.isFinite(customerUnitPrice) && customerUnitPrice >= 0 ? customerUnitPrice : 0))],
     ['累计送水', customerStats.value.totalWater],
     ['累计回桶', customerStats.value.totalReturned],
     ['应收金额', Number(formatExportMoney(customerStats.value.totalReceivable))],
