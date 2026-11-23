@@ -218,7 +218,7 @@ const billPreviewSaving = ref(false)
 const currentMonth = computed(() => store.formatDate(new Date()).substring(0, 7))
 const exportOptions = [
   { value: 'excel', label: 'Excel' },
-  { value: 'daily-image', label: '每日账单图（保存到相册）' }
+  { value: 'daily-image', label: '图片' }
 ]
 
 const restoreSelectedMonth = () => {
