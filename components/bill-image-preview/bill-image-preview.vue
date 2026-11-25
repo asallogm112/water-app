@@ -32,8 +32,11 @@
         </view>
       </scroll-view>
       <view class="bip-footer">
-        <view class="bip-export" :class="{ 'bip-export-off': saving }" @tap="save">
-          <text>{{ saving ? '保存中…' : '导出所选到相册' }}</text>
+        <view class="bip-btn bip-btn-save" :class="{ 'bip-btn-off': saving }" @tap="save">
+          <text>{{ saving ? '保存中…' : '保存到相册' }}</text>
+        </view>
+        <view class="bip-btn bip-btn-share" @tap="share">
+          <text>分享到微信</text>
         </view>
       </view>
     </view>
@@ -42,7 +45,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { saveBillImageFiles } from '../../common/daily-bill-image.js'
+import { saveBillImageFiles, shareImageToWeChat } from '../../common/daily-bill-image.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -64,6 +67,15 @@ const selectAll = (selected) => {
 const zoom = (index) => {
   const urls = props.files.map(item => item.path)
   if (urls.length) uni.previewImage({ current: index, urls })
+}
+const share = () => {
+  const picked = props.files.filter(item => item && item.path && item.selected)
+  const target = picked[0] || props.files.find(item => item && item.path)
+  if (!target) {
+    uni.showToast({ title: '暂无可分享的图片', icon: 'none' })
+    return
+  }
+  shareImageToWeChat(target.path, target.fileName)
 }
 const save = async () => {
   if (saving.value) return
@@ -104,12 +116,14 @@ const save = async () => {
 .bip-thumb { position: relative; width: 100%; height: 200px; background: #e2e8f0; overflow: hidden; }
 .bip-image { width: 100%; height: 100%; display: block; }
 .bip-hint { position: absolute; right: 8px; bottom: 8px; font-size: 10px; font-weight: 700; color: #fff; background: rgba(15,23,42,.55); padding: 3px 8px; border-radius: 999px; }
-.bip-item-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-top: 1px solid #f1f5f9; }
-.bip-label { font-size: 12px; font-weight: 700; color: #334155; }
-.bip-check { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; background: #fff; }
+.bip-item-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid #f1f5f9; }
+.bip-label { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; color: #334155; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bip-check { flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; background: #fff; }
 .bip-check-on { border-color: #10b981; background: #10b981; }
 .bip-check-mark { color: #fff; font-size: 14px; font-weight: 800; }
-.bip-footer { flex-shrink: 0; padding: 12px 16px 20px; background: #fff; border-top: 1px solid #e2e8f0; box-sizing: border-box; }
-.bip-export { height: 46px; border-radius: 16px; background: linear-gradient(135deg,#0f766e,#10b981); box-shadow: 0 10px 20px rgba(16,185,129,.16); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #fff; }
-.bip-export-off { opacity: .5; }
+.bip-footer { flex-shrink: 0; display: flex; gap: 10px; padding: 12px 16px 20px; background: #fff; border-top: 1px solid #e2e8f0; box-sizing: border-box; }
+.bip-btn { flex: 1; height: 46px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #fff; }
+.bip-btn-save { background: linear-gradient(135deg,#0f766e,#10b981); box-shadow: 0 10px 20px rgba(16,185,129,.16); }
+.bip-btn-share { background: linear-gradient(135deg,#1d4ed8,#3b82f6); box-shadow: 0 10px 20px rgba(59,130,246,.16); }
+.bip-btn-off { opacity: .5; }
 </style>

@@ -419,7 +419,7 @@
 		exportExcelWorkbook,
 		showExcelPreviewShareActions
 	} from '../../common/export-excel.js'
-	import { generateTableImageFiles } from '../../common/daily-bill-image.js'
+	import { generateDailyBillImageFiles } from '../../common/daily-bill-image.js'
 	import BillImagePreview from '../../components/bill-image-preview/bill-image-preview.vue'
 
 	const store = useStore()
@@ -864,7 +864,6 @@
 		})
 		rows.push(headerRow)
 		const groupedItems = Array.from(groupedMap.values())
-			.filter(item => item.receivable - item.actual > 5)
 		const dailyItems = groupedItems.filter(item => item.settlementLabel === '日结')
 		const monthlyItems = groupedItems.filter(item => item.settlementLabel === '月结')
 		const buildCustomerRow = (item, isMonthly) => {
@@ -924,48 +923,25 @@
 			]
 		}
 	}
-	const buildDayImageRows = () => {
-		const rows = [
-			[
-				{ value: '客户', style: 'header' },
-				{ value: '发水', style: 'header' },
-				{ value: '回桶', style: 'header' },
-				{ value: '应收', style: 'header' },
-				{ value: '欠款', style: 'header' }
-			]
-		]
-		const items = filteredOrders.value
+	const buildDayImageDays = () => {
+		const rows = filteredOrders.value
 			.filter(order => String(order?.userName || '').trim())
-			.map(order => {
-				const receivable = getReceivableAmount(order)
-				return {
-					name: String(order.userName || '').trim(),
-					quantity: Number(order.quantity) || 0,
-					returnedBuckets: Number(order.returnedBuckets) || 0,
-					receivable,
-					debt: receivable - getActualPaidAmount(order)
-				}
-			})
-			.filter(item => item.debt > 5)
-			.sort((a, b) => b.debt - a.debt)
-		items.forEach(item => {
-			rows.push([
-				item.name,
-				item.quantity,
-				item.returnedBuckets,
-				formatExportMoney(item.receivable),
-				{ value: formatExportMoney(item.debt), style: 'red' }
-			])
-		})
-		rows.push(['', '', '', '', ''])
-		rows.push([
-			{ value: '合计', style: 'header' },
-			totalDeliveredSum.value,
-			totalReturnedSum.value,
-			{ value: formatExportMoney(totalAmountSum.value), style: 'red' },
-			{ value: formatExportMoney(totalAmountSum.value - totalActualSum.value), style: 'red' }
-		])
-		return { rows, itemCount: items.length }
+			.map(order => ({
+				name: String(order.userName || '').trim(),
+				quantity: Number(order.quantity) || 0,
+				returned: Number(order.returnedBuckets) || 0,
+				receivable: getReceivableAmount(order),
+				actual: getActualPaidAmount(order)
+			}))
+			.sort((a, b) => (b.receivable - b.actual) - (a.receivable - a.actual))
+		return [{
+			date: selectedDate.value,
+			quantity: totalDeliveredSum.value,
+			returnedBuckets: totalReturnedSum.value,
+			totalAmount: totalAmountSum.value,
+			actualAmount: totalActualSum.value,
+			rows
+		}]
 	}
 	const handleExportOption = (type) => {
 		showExportModal.value = false
@@ -979,16 +955,18 @@
 			return
 		}
 		if (type === 'image') {
-			const { rows, itemCount } = buildDayImageRows()
-			if (itemCount === 0) {
+			const days = buildDayImageDays()
+			if (days.length === 0 || days[0].rows.length === 0) {
 				uni.showToast({ title: '暂无可导出的账单数据', icon: 'none' })
 				return
 			}
+			const datePart = String(selectedDate.value || '')
+			const monthLabel = datePart.length >= 7 ? `${datePart.substring(0, 4)}年${datePart.substring(5, 7)}月` : datePart
 			uni.showLoading({ title: '生成图片中…', mask: true })
-			generateTableImageFiles({
+			generateDailyBillImageFiles({
 				selector: '#exportBillCanvas',
-				title: `${selectedDate.value} 日账单`,
-				rows
+				monthLabel,
+				days
 			}).then(files => {
 				imagePreviewFiles.value = files
 				showImagePreview.value = true

@@ -40,12 +40,10 @@ export function formatMoney(value) {
 }
 
 /**
- * 导出专用：金额取整（去掉小数，22.7 → 22）；页面显示仍用 formatMoney
+ * 导出专用：金额按真实数值显示（2.7 → 2.7，不取整、不补零）；仅修正浮点误差
  */
 export function formatExportMoney(value) {
-  const amount = Number(value)
-  if (!Number.isFinite(amount)) return '0'
-  return String(Math.trunc(amount))
+  return String(roundMoney(value))
 }
 
 export function createUserUnitPriceMap(users = []) {

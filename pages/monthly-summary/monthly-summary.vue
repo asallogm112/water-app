@@ -170,8 +170,11 @@
           </view>
         </scroll-view>
         <view class="preview-footer">
-          <view class="preview-export-btn" :class="{ 'btn-disabled': billPreviewSaving }" @tap="saveSelectedBillImages">
-            <text>{{ billPreviewSaving ? '保存中…' : '导出所选到相册' }}</text>
+          <view class="preview-action-btn" :class="{ 'btn-disabled': billPreviewSaving }" @tap="saveSelectedBillImages">
+            <text>{{ billPreviewSaving ? '保存中…' : '保存到相册' }}</text>
+          </view>
+          <view class="preview-action-btn preview-action-share" @tap="shareBillImages">
+            <text>分享到微信</text>
           </view>
         </view>
       </view>
@@ -184,7 +187,7 @@ import { ref, computed } from 'vue'
 import { useStore } from '../../common/store.js'
 import { createUserUnitPriceMap, formatMoney, formatExportMoney, getOrderReceivableAmount, getOrderActualReceivedAmount } from '../../common/utils.js'
 import { exportExcelWorkbook, showExcelPreviewShareActions } from '../../common/export-excel.js'
-import { generateDailyBillImageFiles, saveBillImageFiles } from '../../common/daily-bill-image.js'
+import { generateDailyBillImageFiles, saveBillImageFiles, shareImageToWeChat } from '../../common/daily-bill-image.js'
 
 const store = useStore()
 const { state } = store
@@ -341,11 +344,9 @@ const buildMonthlySummarySheetRows = () => {
     ['', '', '', '', ''],
     headerRow
   ]
-  sortedMonthGroups.value
-    .filter(group => group.totalAmount - group.actualAmount > 5)
-    .forEach(group => {
-      rows.push([formatMonth(group.month), group.quantity, group.returnedBuckets, Number(formatExportMoney(group.totalAmount)), Number(formatExportMoney(group.actualAmount))])
-    })
+  sortedMonthGroups.value.forEach(group => {
+    rows.push([formatMonth(group.month), group.quantity, group.returnedBuckets, Number(formatExportMoney(group.totalAmount)), Number(formatExportMoney(group.actualAmount))])
+  })
   const getCellDisplayLength = (cell) => {
     const value = cell && typeof cell === 'object' && !Array.isArray(cell) ? cell.value : cell
     const text = String(value ?? '')
@@ -414,7 +415,6 @@ const buildMonthlyBillSummary = (days) => {
       debt: round(person.receivable - person.actual),
       debtBuckets: person.quantity - person.returned
     }))
-    .filter(person => person.debt > 5)
     .sort((a, b) => b.debt - a.debt)
   return {
     persons,
@@ -445,7 +445,7 @@ const buildDailyBillDays = () => {
         returned: Number(order.returnedBuckets) || 0,
         receivable: getReceivableAmount(order),
         actual: getActualAmount(order)
-      })).filter(row => row.receivable - row.actual > 5)
+      }))
     }))
 }
 
@@ -484,6 +484,15 @@ const previewBillImage = (index) => {
   const urls = billPreviewFiles.value.map(item => item.path)
   if (urls.length === 0) return
   uni.previewImage({ current: index, urls })
+}
+const shareBillImages = () => {
+  const picked = billPreviewFiles.value.filter(item => item && item.path && item.selected)
+  const target = picked[0] || billPreviewFiles.value.find(item => item && item.path)
+  if (!target) {
+    uni.showToast({ title: '暂无可分享的图片', icon: 'none' })
+    return
+  }
+  shareImageToWeChat(target.path, target.fileName)
 }
 
 const toggleBillPreviewItem = (index) => {
@@ -708,13 +717,14 @@ const navigateToOrderList = (date) => {
 .preview-thumb { position: relative; width: 100%; height: 200px; background: #e2e8f0; overflow: hidden; }
 .preview-image { width: 100%; height: 100%; display: block; }
 .preview-zoom-hint { position: absolute; right: 8px; bottom: 8px; font-size: 10px; font-weight: 700; color: #fff; background: rgba(15,23,42,.55); padding: 3px 8px; border-radius: 999px; }
-.preview-item-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-top: 1px solid #f1f5f9; }
-.preview-item-label { font-size: 12px; font-weight: 700; color: #334155; }
-.preview-checkbox { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; background: #fff; }
+.preview-item-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid #f1f5f9; }
+.preview-item-label { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; color: #334155; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.preview-checkbox { flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; background: #fff; }
 .preview-checkbox-checked { border-color: #10b981; background: #10b981; }
 .preview-check-mark { color: #fff; font-size: 14px; font-weight: 800; }
-.preview-footer { flex-shrink: 0; padding: 12px 16px 20px; background: #fff; border-top: 1px solid #e2e8f0; box-sizing: border-box; }
-.preview-export-btn { height: 46px; border-radius: 16px; background: linear-gradient(135deg,#0f766e,#10b981); box-shadow: 0 10px 20px rgba(16,185,129,.16); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #fff; }
+.preview-footer { flex-shrink: 0; display: flex; gap: 10px; padding: 12px 16px 20px; background: #fff; border-top: 1px solid #e2e8f0; box-sizing: border-box; }
+.preview-action-btn { flex: 1; height: 46px; border-radius: 16px; background: linear-gradient(135deg,#0f766e,#10b981); box-shadow: 0 10px 20px rgba(16,185,129,.16); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: #fff; }
+.preview-action-share { background: linear-gradient(135deg,#1d4ed8,#3b82f6); box-shadow: 0 10px 20px rgba(59,130,246,.16); }
 .btn-disabled { opacity: .5; }
 
 .safe-bottom { height: 32px; }

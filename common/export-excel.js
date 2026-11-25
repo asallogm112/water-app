@@ -138,52 +138,55 @@ function buildStylesXml() {
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 	<fonts count="9">
 		<font>
-			<sz val="10"/>
+			<b/>
+			<sz val="11"/>
 			<name val="Microsoft YaHei"/>
 		</font>
 		<font>
 			<b/>
-			<sz val="16"/>
+			<sz val="17"/>
 			<color rgb="FFFF0000"/>
 			<name val="Microsoft YaHei"/>
 		</font>
 		<font>
 			<b/>
-			<sz val="14"/>
-			<color rgb="FFFF0000"/>
-			<name val="Microsoft YaHei"/>
-		</font>
-		<font>
-			<sz val="10"/>
+			<sz val="15"/>
 			<color rgb="FFFF0000"/>
 			<name val="Microsoft YaHei"/>
 		</font>
 		<font>
 			<b/>
-			<sz val="10"/>
+			<sz val="11"/>
+			<color rgb="FFFF0000"/>
+			<name val="Microsoft YaHei"/>
+		</font>
+		<font>
+			<b/>
+			<sz val="11"/>
 			<color rgb="FF059669"/>
 			<name val="Microsoft YaHei"/>
 		</font>
 		<font>
 			<b/>
-			<sz val="10"/>
+			<sz val="11"/>
 			<color rgb="FFDC2626"/>
 			<name val="Microsoft YaHei"/>
 		</font>
 		<font>
 			<b/>
-			<sz val="10"/>
+			<sz val="11"/>
 			<color rgb="FFEA580C"/>
 			<name val="Microsoft YaHei"/>
 		</font>
 		<font>
 			<b/>
-			<sz val="10"/>
+			<sz val="11"/>
 			<color rgb="FF7C3AED"/>
 			<name val="Microsoft YaHei"/>
 		</font>
 		<font>
-			<sz val="10"/>
+			<b/>
+			<sz val="11"/>
 			<color rgb="FF000000"/>
 			<name val="Microsoft YaHei"/>
 		</font>

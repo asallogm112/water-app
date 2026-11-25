@@ -14,7 +14,13 @@ const SUMMARY_TOTAL_LINE_HEIGHT = 42
 
 function formatMoney(value) {
   const num = Number(value)
-  return String(Math.trunc(Number.isFinite(num) ? num : 0))
+  const amount = Number.isFinite(num) ? num : 0
+  return String(Math.round((amount + (amount >= 0 ? 1e-9 : -1e-9)) * 100) / 100)
+}
+
+function makeBillFileName(label) {
+  const base = String(label || '账单').replace(/[\\/:*?"<>|]/g, '_').trim()
+  return `${base || '账单'}-账单.png`
 }
 
 function getCanvasNode(selector) {
@@ -59,16 +65,16 @@ function drawDay(ctx, day, monthLabel, rows) {
   ctx.textBaseline = 'middle'
 
   ctx.fillStyle = '#1e293b'
-  ctx.font = 'bold 32px sans-serif'
+  ctx.font = 'bold 34px sans-serif'
   ctx.textAlign = 'left'
   ctx.fillText(`${monthLabel} 送水账单`, PADDING, 50)
 
   ctx.fillStyle = '#475569'
-  ctx.font = '26px sans-serif'
+  ctx.font = 'bold 28px sans-serif'
   ctx.fillText(`日期：${day.date}`, PADDING, 100)
 
   ctx.fillStyle = '#0f766e'
-  ctx.font = 'bold 26px sans-serif'
+  ctx.font = 'bold 28px sans-serif'
   ctx.fillText(`发水 ${Number(day.quantity) || 0} 桶    回桶 ${Number(day.returnedBuckets) || 0} 个`, PADDING, 150)
 
   ctx.fillStyle = '#b91c1c'
@@ -84,7 +90,7 @@ function drawDay(ctx, day, monthLabel, rows) {
   ctx.stroke()
 
   ctx.fillStyle = '#64748b'
-  ctx.font = '24px sans-serif'
+  ctx.font = 'bold 26px sans-serif'
   ctx.textAlign = 'left'
   ctx.fillText('客户', PADDING, 248)
   ctx.textAlign = 'right'
@@ -99,7 +105,7 @@ function drawDay(ctx, day, monthLabel, rows) {
       ctx.fillStyle = '#f8fafc'
       ctx.fillRect(PADDING, y - LINE_HEIGHT / 2, PAGE_WIDTH - PADDING * 2, LINE_HEIGHT)
     }
-    ctx.font = '24px sans-serif'
+    ctx.font = 'bold 26px sans-serif'
     ctx.fillStyle = '#1e293b'
     ctx.textAlign = 'left'
     ctx.fillText(row.name || '', PADDING + 6, y)
@@ -145,12 +151,12 @@ function drawSummary(ctx, monthLabel, summary) {
   ctx.textBaseline = 'middle'
 
   ctx.fillStyle = '#1e293b'
-  ctx.font = 'bold 32px sans-serif'
+  ctx.font = 'bold 34px sans-serif'
   ctx.textAlign = 'left'
   ctx.fillText(`${monthLabel} 月度统计`, PADDING, 50)
 
   ctx.fillStyle = '#64748b'
-  ctx.font = '24px sans-serif'
+  ctx.font = 'bold 26px sans-serif'
   ctx.fillText(`共 ${persons.length} 位客户`, PADDING, 95)
 
   ctx.strokeStyle = '#cbd5e1'
@@ -161,7 +167,7 @@ function drawSummary(ctx, monthLabel, summary) {
   ctx.stroke()
 
   ctx.fillStyle = '#64748b'
-  ctx.font = '24px sans-serif'
+  ctx.font = 'bold 26px sans-serif'
   ctx.textAlign = 'left'
   ctx.fillText('人员', PADDING, 150)
   ctx.textAlign = 'right'
@@ -176,7 +182,7 @@ function drawSummary(ctx, monthLabel, summary) {
       ctx.fillStyle = '#f8fafc'
       ctx.fillRect(PADDING, y - LINE_HEIGHT / 2, PAGE_WIDTH - PADDING * 2, LINE_HEIGHT)
     }
-    ctx.font = '24px sans-serif'
+    ctx.font = 'bold 26px sans-serif'
     ctx.fillStyle = '#1e293b'
     ctx.textAlign = 'left'
     ctx.fillText(person.name || '', PADDING + 6, y)
@@ -197,7 +203,7 @@ function drawSummary(ctx, monthLabel, summary) {
 
   totalLines.forEach((line, index) => {
     const y = totalsTop + index * SUMMARY_TOTAL_LINE_HEIGHT + SUMMARY_TOTAL_LINE_HEIGHT / 2
-    ctx.font = 'bold 26px sans-serif'
+    ctx.font = 'bold 28px sans-serif'
     ctx.fillStyle = '#475569'
     ctx.textAlign = 'left'
     ctx.fillText(line.label, PADDING + 6, y)
@@ -264,7 +270,7 @@ export async function generateDailyBillImageFiles({ selector, monthLabel, days =
     ctx.scale(dpr, dpr)
     draw()
     const path = await canvasToTempFile(canvas, height, dpr)
-    files.push({ path, label, selected: true })
+    files.push({ path, label, fileName: makeBillFileName(label), selected: true })
     done += 1
     if (typeof onProgress === 'function') onProgress(done, totalSteps)
   }
@@ -302,6 +308,31 @@ export async function saveBillImageFiles(files = [], onProgress) {
   return done
 }
 
+/**
+ * 分享图片到微信（与 Excel 分享同款：用 wx.shareFileMessage 直接弹聊天选择）
+ * @param {String} filePath 图片临时路径
+ * @param {String} fileName 分享时显示的文件名，如 2026-11-21-账单.png
+ */
+export function shareImageToWeChat(filePath, fileName) {
+  if (!filePath) {
+    uni.showToast({ title: '图片未就绪', icon: 'none' })
+    return
+  }
+  if (typeof wx === 'undefined') {
+    uni.showToast({ title: '仅支持在微信中使用', icon: 'none' })
+    return
+  }
+  if (typeof wx.shareFileMessage !== 'function') {
+    uni.showToast({ title: '当前微信版本不支持分享', icon: 'none' })
+    return
+  }
+  wx.shareFileMessage({
+    filePath,
+    fileName: fileName || '账单.png',
+    fail: () => {}
+  })
+}
+
 const TABLE_LINE_HEIGHT = 38
 const TABLE_TOP = 90
 
@@ -322,7 +353,7 @@ function drawTableSheet(ctx, rows, title, maxColumns) {
   ctx.textBaseline = 'middle'
 
   ctx.fillStyle = '#1e293b'
-  ctx.font = 'bold 30px sans-serif'
+  ctx.font = 'bold 32px sans-serif'
   ctx.textAlign = 'left'
   ctx.fillText(title, PADDING, 45)
 
@@ -334,7 +365,7 @@ function drawTableSheet(ctx, rows, title, maxColumns) {
       const text = cellText(cell)
       if (!text) return
       const style = cellStyle(cell)
-      ctx.font = (style === 'title' ? 'bold 28px' : (style === 'header' ? 'bold 24px' : '22px')) + ' sans-serif'
+      ctx.font = (style === 'title' ? 'bold 30px' : (style === 'header' ? 'bold 26px' : 'bold 24px')) + ' sans-serif'
       ctx.fillStyle = style === 'title' || style === 'monthly' || style === 'red'
         ? '#dc2626'
         : (style === 'green' ? '#059669' : (style === 'orange' ? '#ea580c' : (style === 'purple' ? '#7c3aed' : '#1e293b')))
@@ -371,5 +402,5 @@ export async function generateTableImageFiles({ selector, title, rows = [], onPr
   drawTableSheet(ctx, rows, title, maxColumns)
   const path = await canvasToTempFile(canvas, height, dpr)
   if (typeof onProgress === 'function') onProgress(1, 1)
-  return [{ path, label: title, selected: true }]
+  return [{ path, label: title, fileName: makeBillFileName(title), selected: true }]
 }

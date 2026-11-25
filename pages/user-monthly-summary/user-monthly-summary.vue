@@ -1186,7 +1186,6 @@ const buildCustomerSummarySheetRows = () => {
     const relatedOrders = filteredOrders.value.filter(order => order.createdDate === item.date)
     const receivable = relatedOrders.reduce((sum, order) => sum + getReceivableAmount(order), 0)
     const actual = relatedOrders.reduce((sum, order) => sum + getActualAmount(order), 0)
-    if (receivable - actual <= 5) return
     rows.push([
       item.date,
       item.water,
